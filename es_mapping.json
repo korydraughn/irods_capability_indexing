@@ -1,45 +1,46 @@
-{"properties": {
-				"url": {
-					"type": "text"
-				},
-				"zoneName": {
+{
+	"properties": {
+		"url": {
+			"type": "text"
+		},
+		"zoneName": {
+			"type": "keyword"
+		},
+		"absolutePath": {
+			"type": "keyword"
+		},
+		"fileName": {
+			"type": "text"
+		},
+		"parentPath": {
+			"type": "text"
+		},
+		"isFile": {
+			"type": "boolean"
+		},
+		"dataSize": {
+			"type": "long"
+		},
+		"mimeType": {
+			"type": "keyword"
+		},
+		"lastModifiedDate": {
+			"type": "date",
+			"format": "epoch_second"
+		},
+		"metadataEntries": {
+			"type": "nested",
+			"properties": {
+				"attribute": {
 					"type": "keyword"
 				},
-				"absolutePath": {
-					"type": "keyword"
-				},
-				"fileName": {
+				"value": {
 					"type": "text"
 				},
-				"parentPath": {
-					"type": "text"
-				},
-				"isFile": {
-					"type": "boolean"
-				},
-				"dataSize": {
-					"type": "long"
-				},
-				"mimeType": {
+				"unit": {
 					"type": "keyword"
-				},
-				"lastModifiedDate": {
-					"type": "date",
-					"format": "epoch_second"
-				},
-				"metadataEntries": {
-					"type": "nested",
-					"properties": {
-						"attribute": {
-							"type": "keyword"
-						},
-						"value": {
-							"type": "text"
-						},
-						"unit": {
-							"type": "keyword"
-						}
-					}
 				}
 			}
 		}
+	}
+}

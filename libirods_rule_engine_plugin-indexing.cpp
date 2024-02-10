@@ -1,4 +1,3 @@
-
 // =-=-=-=-=-=-=-
 // irods includes
 #define IRODS_QUERY_ENABLE_SERVER_SIDE_API

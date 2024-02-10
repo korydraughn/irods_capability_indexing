@@ -1,12 +1,11 @@
-#ifndef CPP_JSON_KW__HPP
-#define CPP_JSON_KW__HPP
+#ifndef IRODS_CPP_JSON_KW_HPP
+#define IRODS_CPP_JSON_KW_HPP
+
+#include <nlohmann/json.hpp>
 
 #include <optional>
-#include <string>
-#include <nlohmann/json.hpp>
 #include <stdexcept>
-
-using nlohmann::json;
+#include <string>
 
 template <typename T>
 struct mapped_json_value
@@ -58,4 +57,4 @@ int main (int argc, char** argv)
  *
  */
 
-#endif // CPP_JSON_KW__HPP
+#endif // IRODS_CPP_JSON_KW_HPP
