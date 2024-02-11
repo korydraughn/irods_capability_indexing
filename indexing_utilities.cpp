@@ -12,13 +12,19 @@
 #include <irods/rsOpenCollection.hpp>
 #include <irods/rsReadCollection.hpp>
 
-#define IRODS_METADATA_ENABLE_SERVER_SIDE_API
+#ifndef IRODS_METADATA_ENABLE_SERVER_SIDE_API
+#  define IRODS_METADATA_ENABLE_SERVER_SIDE_API
+#endif
 #include <irods/metadata.hpp>
 
-#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#ifndef IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#  define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#endif
 #include <irods/irods_query.hpp>
 
-#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#ifndef IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#  define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#endif
 #include <irods/filesystem.hpp>
 
 #include <boost/algorithm/string.hpp>
@@ -114,7 +120,7 @@ namespace irods::indexing
 		using json = nlohmann::json;
 		json rule_obj;
 		rule_obj["rule-engine-operation"] = policy_name;
-		rule_obj["rule-engine-instance-name"] = config_.instance_name_;
+		rule_obj["rule-engine-instance-name"] = config_.instance_name;
 		rule_obj["collection-name"] = _collection_name;
 		rule_obj["user-name"] = _user_name;
 		rule_obj["indexer"] = _indexer;
@@ -250,7 +256,7 @@ namespace irods::indexing
 
 		const std::hash<std::string> string_hasher;
 		const auto key1 = string_hasher(_collection_name);
-		const auto key2 = string_hasher(config_.instance_name_);
+		const auto key2 = string_hasher(config_.instance_name);
 
 		const std::string unique_key = std::to_string(key1) + "-" + std::to_string(key2);
 
@@ -508,7 +514,7 @@ namespace irods::indexing
 
 	std::string indexer::generate_delay_execution_parameters()
 	{
-		std::string params{config_.delay_parameters + "<INST_NAME>" + config_.instance_name_ + "</INST_NAME>"};
+		std::string params{config_.delay_parameters + "<INST_NAME>" + config_.instance_name + "</INST_NAME>"};
 
 		int min_time = config_.minimum_delay_time <= 0 ? 1 : config_.minimum_delay_time;
 		int max_time = config_.maximum_delay_time <= 0 ? 30 : config_.maximum_delay_time;
@@ -594,13 +600,14 @@ namespace irods::indexing
 	{
 		using json = nlohmann::json;
 
+		// FIXME UB! Leading underscore followed by capital letter!
 		const auto& [_ID_bool, _obj_optional_ID] = kws_get<std::string>(
-			_extra_options, "_obj_optional_ID"); // FIXME UB! Leading underscore followed by capital letter!
+			_extra_options, "_obj_optional_ID");
 		const auto& [_tag_bool, job_category_tag] = kws_get<std::string>(_extra_options, "job_category_tag");
 
 		json rule_obj;
 		rule_obj["rule-engine-operation"] = _event;
-		rule_obj["rule-engine-instance-name"] = config_.instance_name_;
+		rule_obj["rule-engine-instance-name"] = config_.instance_name;
 		rule_obj["object-path"] = _ID_bool && !(*_obj_optional_ID).empty() ? *_obj_optional_ID : _object_path;
 		rule_obj["user-name"] = _user_name;
 		rule_obj["indexer"] = _indexer;

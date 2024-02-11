@@ -3,6 +3,7 @@
 
 #include "configuration.hpp"
 
+#include <irods/irods_re_structs.hpp>
 #include <irods/rcMisc.h>
 
 #include <boost/any.hpp>

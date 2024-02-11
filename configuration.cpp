@@ -77,7 +77,7 @@ namespace irods::indexing
 		{
 			return fmt::format("{}_{}", _prefix, _technology);
 		}
-	} //namespace policy
+	} // namespace policy
 
 	std::string operation_and_index_types_to_policy_name(const std::string& _operation_type,
 	                                                     const std::string& _index_type)

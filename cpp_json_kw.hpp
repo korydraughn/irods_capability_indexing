@@ -1,6 +1,8 @@
 #ifndef IRODS_CPP_JSON_KW_HPP
 #define IRODS_CPP_JSON_KW_HPP
 
+#include <irods/rodsLog.h>
+
 #include <nlohmann/json.hpp>
 
 #include <optional>
@@ -27,7 +29,7 @@ auto kws_get(const nlohmann::json& j, const std::string& key) -> mapped_json_val
 			return {true, iter->get<T>()};
 		}
 		catch (std::exception& e) {
-			std::cerr << "bad conversion: " << e.what() << std::endl;
+			rodsLog(LOG_ERROR, "%s: bad conversion: %s", __func__, e.what());
 			throw;
 		}
 	}

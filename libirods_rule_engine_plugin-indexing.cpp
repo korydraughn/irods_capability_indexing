@@ -193,7 +193,7 @@ namespace
 				parser.set_string(resc_hier);
 				parser.last_resc(source_resource);
 
-				irods::indexing::indexer idx{_rei, config->instance_name_};
+				irods::indexing::indexer idx{_rei, config->instance_name};
 				idx.schedule_full_text_indexing_event(object_path, _rei->rsComm->clientUser.userName, source_resource);
 
 				const char* metadata_included = getValByKey(&obj_inp->condInput, METADATA_INCLUDED_KW);
@@ -224,7 +224,7 @@ namespace
 				parser.set_string(resc_hier);
 				parser.last_resc(source_resource);
 
-				irods::indexing::indexer idx{_rei, config->instance_name_};
+				irods::indexing::indexer idx{_rei, config->instance_name};
 				idx.schedule_full_text_indexing_event(object_path, _rei->rsComm->clientUser.userName, source_resource);
 			}
 			else if ("pep_api_data_obj_open_post" == _rn || "pep_api_data_obj_create_post" == _rn) {
@@ -260,7 +260,7 @@ namespace
 				if (opened_objects.find(l1_idx) != opened_objects.end()) {
 					std::string object_path, resource_name;
 					std::tie(object_path, resource_name) = opened_objects[l1_idx];
-					irods::indexing::indexer idx{_rei, config->instance_name_};
+					irods::indexing::indexer idx{_rei, config->instance_name};
 					idx.schedule_full_text_indexing_event(
 						object_path, _rei->rsComm->clientUser.userName, resource_name);
 				}
@@ -285,7 +285,7 @@ namespace
 				const std::string set{"set"};
 				const std::string collection{"-C"};
 
-				irods::indexing::indexer idx{_rei, config->instance_name_};
+				irods::indexing::indexer idx{_rei, config->instance_name};
 				if (operation == set || operation == add) {
 					if (type == collection) {
 						// was the added tag an indexing indicator
@@ -337,7 +337,7 @@ namespace
 				const std::string collection{"-C"};
 				const std::string data_object{"-d"};
 
-				irods::indexing::indexer idx{_rei, config->instance_name_};
+				irods::indexing::indexer idx{_rei, config->instance_name};
 				if (operation == rm) {
 					// removed index metadata from collection
 					if (type == collection) {
@@ -398,7 +398,7 @@ namespace
 				}
 				const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
 				if ('*' != rm_force_kw[0]) { /* there was a force keyword */
-					irods::indexing::indexer idx{_rei, config->instance_name_};
+					irods::indexing::indexer idx{_rei, config->instance_name};
 					nlohmann::json recurseInfo{{"is_collection", false}};
 					recurseInfo["indices"] = indices_for_rm_coll;
 					idx.schedule_metadata_purge_for_recursive_rm_object(obj_inp->objPath, recurseInfo);
@@ -441,7 +441,7 @@ namespace
 					}
 					CollInp* obj_inp = nullptr;
 					obj_inp = boost::any_cast<CollInp*>(*it);
-					irods::indexing::indexer idx{_rei, config->instance_name_};
+					irods::indexing::indexer idx{_rei, config->instance_name};
 					nlohmann::json recurseInfo = {{"is_collection", true}};
 					recurseInfo["indices"] = indices_for_rm_coll;
 					idx.schedule_metadata_purge_for_recursive_rm_object(obj_inp->collName, recurseInfo);
@@ -501,7 +501,7 @@ namespace
 
 					for (const auto& [attribute, value, units] : avus_added_or_removed) {
 						if (attribute != config->index) {
-							irods::indexing::indexer idx{_rei, config->instance_name_};
+							irods::indexing::indexer idx{_rei, config->instance_name};
 							idx.schedule_metadata_indexing_event(
 								obj_path, _rei->rsComm->clientUser.userName, attribute, value, units);
 							break; // only need one event to re-index all AVU's
@@ -714,7 +714,7 @@ namespace
 			}
 		}
 		auto fileName = obj["fileName"] = irods_path.object_name();
-		obj["url"] = fmt::format(fmt::runtime(config->urlTemplate), _obj_path);
+		obj["url"] = fmt::format(fmt::runtime(config->url_template), _obj_path);
 		obj["mimeType"] = (is_collection ? "" : get_default_mime_type(fileName));
 		return obj;
 
@@ -840,7 +840,7 @@ irods::error exec_rule_text(irods::default_re_ctx&,
 		const auto rule_obj = json::parse(rule_text);
 		const std::string& rule_engine_instance_name = rule_obj["rule-engine-instance-name"];
 		// if the rule text does not have our instance name, fail
-		if (config->instance_name_ != rule_engine_instance_name) {
+		if (config->instance_name != rule_engine_instance_name) {
 			return ERROR(SYS_NOT_SUPPORTED, "instance name not found");
 		}
 #if 0
@@ -858,7 +858,7 @@ irods::error exec_rule_text(irods::default_re_ctx&,
             json delay_obj;
             delay_obj["rule-engine-operation"] = irods::indexing::policy::indexing;
 
-            irods::indexing::indexer idx{rei, config->instance_name_};
+            irods::indexing::indexer idx{rei, config->instance_name};
             idx.schedule_indexing_policy(
                 delay_obj.dump(),
                 params);
@@ -948,7 +948,7 @@ irods::error exec_rule_expression(irods::default_re_ctx&,
 			// - launch delayed task to handle indexing events under a collection
 			// -   ( example : a new indexing AVU was placed on the collection )
 			// -
-			irods::indexing::indexer idx{rei, config->instance_name_};
+			irods::indexing::indexer idx{rei, config->instance_name};
 			idx.schedule_policy_events_for_collection(irods::indexing::operation_type::index,
 			                                          rule_obj["collection-name"],
 			                                          rule_obj["user-name"],
@@ -960,7 +960,7 @@ irods::error exec_rule_expression(irods::default_re_ctx&,
 			// - launch delayed task to handle indexing events under a collection
 			// -   ( example : an indexing AVU was removed from the collection )
 			// -
-			irods::indexing::indexer idx{rei, config->instance_name_};
+			irods::indexing::indexer idx{rei, config->instance_name};
 			idx.schedule_policy_events_for_collection(irods::indexing::operation_type::purge,
 			                                          rule_obj["collection-name"],
 			                                          rule_obj["user-name"],

@@ -1,78 +1,151 @@
-#define IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
-#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
-#include <irods/irods_query.hpp>
+#include "boost/beast/core/tcp_stream.hpp"
+#include "boost/beast/http/string_body.hpp"
+#include "boost/system/detail/errc.hpp"
+#include "configuration.hpp"
+#include "plugin_specific_configuration.hpp"
+#include "utilities.hpp"
+
+#include <irods/MD5Strategy.hpp>
+#include <irods/irods_hasher_factory.hpp>
+#include <irods/irods_log.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
-#include "utilities.hpp"
-#include "plugin_specific_configuration.hpp"
-#include "configuration.hpp"
-#include <irods/dstream.hpp>
 #include <irods/rsModAVUMetadata.hpp>
-#include <irods/irods_hasher_factory.hpp>
-#include <irods/MD5Strategy.hpp>
-#include <nlohmann/json.hpp>
-#include <irods/irods_log.hpp>
 
+#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#include <irods/irods_query.hpp>
+
+#define IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
+#include <irods/dstream.hpp>
 #include <irods/transport/default_transport.hpp>
+
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include <irods/filesystem.hpp>
 
-#include <fmt/format.h>
-#include <cpr/api.h>
-#include <cpr/response.h>
-#include <elasticlient/client.h>
-#include <elasticlient/bulk.h>
-#include <elasticlient/logging.h>
-
+#include <boost/algorithm/string.hpp>
 #include <boost/any.hpp>
 #include <boost/format.hpp>
-#include <boost/algorithm/string.hpp>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/algorithm/string.hpp>
-#include <boost/archive/iterators/base64_from_binary.hpp>
-#include <boost/archive/iterators/transform_width.hpp>
-#include <boost/archive/iterators/ostream_iterator.hpp>
 
-#include <string>
-#include <sstream>
+#include <boost/archive/iterators/base64_from_binary.hpp>
+#include <boost/archive/iterators/ostream_iterator.hpp>
+#include <boost/archive/iterators/transform_width.hpp>
+
+#include <boost/asio.hpp>
+#include <boost/beast.hpp>
+
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <optional>
+#include <sstream>
+#include <string>
 
 namespace
 {
+	namespace beast = boost::beast;
+	namespace http = beast::http;
 
-	using HTTPMethod = elasticlient::Client::HTTPMethod;
+	auto send_http_request(const std::string_view _host,
+						   const std::string_view _port,
+						   http::verb _verb,
+						   const std::string_view _target,
+						   const std::string_view _body) -> std::optional<http::response<http::string_body>>
+	{
+		namespace net = boost::asio;
+		using tcp = net::ip::tcp;
+
+		try {
+			net::io_context ioc;
+
+			tcp::resolver resolver{ioc};
+			beast::tcp_stream stream{ioc};
+
+			const auto results = resolver.resolve(_host, _port);
+			stream.connect(results);
+
+			http::request<http::string_body> req{_verb, _target, 11};
+			req.set(http::field::host, "localhost");
+			req.set(http::field::user_agent, "iRODS Indexing Plugin/4.3.1");
+			req.set(http::field::content_type, "application/json");
+
+			if (!_body.empty()) {
+				req.body() = _body;
+				{
+					std::stringstream ss;
+					ss << req;
+					rodsLog(LOG_NOTICE, fmt::format("{}: sending request = [{}]", __func__, ss.str()).c_str());
+				}
+				req.prepare_payload();
+			}
+
+			http::write(stream, req);
+
+			beast::flat_buffer buffer;
+			http::response<http::string_body> res;
+			http::read(stream, buffer, res);
+
+			{
+				std::stringstream ss;
+				ss << res;
+				rodsLog(LOG_NOTICE, fmt::format("{}: elasticsearch response = [{}]", __func__, ss.str()).c_str());
+			}
+
+			beast::error_code ec;
+			stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+
+			// not_connected happens sometimes, so don't bother reporting it.
+			if (ec && ec != beast::errc::not_connected) {
+				throw beast::system_error{ec};
+			}
+
+			return res;
+		}
+		catch (const std::exception& e) {
+			rodsLog(LOG_ERROR, fmt::format("{}: {}", __func__, e.what()).c_str());
+		}
+
+		return std::nullopt;
+	}
 
 	namespace ElasticSearch
 	{
-
-		cpr::Response index(const std::string& version,
-		                    elasticlient::Client& cl,
-		                    const std::string& index_name,
-		                    const std::string& mapping_type,
-		                    const std::string& doc_id,
-		                    const std::string& body)
+		auto index(const std::string& version,
+				   const std::string& index_name,
+				   const std::string& mapping_type,
+				   const std::string& doc_id,
+				   const std::string& body)
 		{
-			if (version < "7.")
+#if 0
+			if (version < "7.") {
 				return cl.index(index_name, mapping_type, doc_id, body);
-			else
-				return cl.performRequest(HTTPMethod::PUT, index_name + "/_doc/" + doc_id, body);
+			}
+#endif
+
+			// TODO op_type=create is new. It instructs elasticsearch to create if the target doesn't exist.
+			// I don't know that we want this.
+			const auto target = fmt::format("{}/_doc/{}?op_type=create", index_name, doc_id);
+			return send_http_request("localhost", "9200", http::verb::put, target, body);
 		}
 
-		cpr::Response remove(const std::string& version,
-		                     elasticlient::Client& cl,
-		                     const std::string& index_name,
-		                     const std::string& mapping_type,
-		                     const std::string& doc_id)
+		auto remove(const std::string& version,
+		            const std::string& index_name,
+		            const std::string& mapping_type,
+		            const std::string& doc_id)
 		{
-			if (version < "7.")
+#if 0
+			if (version < "7.") {
 				return cl.remove(index_name, mapping_type, doc_id);
-			else
-				return cl.performRequest(HTTPMethod::DELETE, index_name + "/_doc/" + doc_id, "");
-		}
+			}
+#endif
 
+			const auto target = fmt::format("{}/_doc/{}", index_name, doc_id);
+			return send_http_request("localhost", "9200", http::verb::delete_, target, "");
+		}
 	} // namespace ElasticSearch
 
 	using string_t = std::string;
@@ -83,6 +156,7 @@ namespace
 		int bulk_count_{10};
 		int read_size_{4194304};
 		std::string es_version_{"7."};
+
 		configuration(const std::string& _instance_name)
 			: irods::indexing::configuration(_instance_name)
 		{
@@ -110,8 +184,8 @@ namespace
 			catch (const std::exception& _e) {
 				THROW(USER_INPUT_OPTION_ERR, _e.what());
 			}
-		} // ctor
-	};    // configuration
+		}
+	}; // struct configuration
 
 	std::unique_ptr<configuration> config;
 	std::string object_index_policy;
@@ -134,10 +208,10 @@ namespace
 
 	} // apply_document_type_policy
 
-	void log_fcn(elasticlient::LogLevel, const std::string& _msg)
-	{
-		rodsLog(LOG_DEBUG, "ELASTICLIENT :: [%s]", _msg.c_str());
-	} // log_fcn
+	//void log_fcn(elasticlient::LogLevel, const std::string& _msg)
+	//{
+		//rodsLog(LOG_DEBUG, "ELASTICLIENT :: [%s]", _msg.c_str());
+	//} // log_fcn
 
 	std::string generate_id()
 	{
@@ -239,6 +313,8 @@ namespace
 	                                     const std::string& _source_resource,
 	                                     const std::string& _index_name)
 	{
+		// TODO Replace use of elasticlient.
+#if 0
 		try {
 			std::string doc_type{"text"};
 			apply_document_type_policy(_rei, _object_path, _source_resource, &doc_type);
@@ -265,6 +341,7 @@ namespace
 				data.erase(
 					std::remove_if(data.begin(),
 				                   data.end(),
+								   // TODO wchar_t feels wrong here. Investigate.
 				                   [](wchar_t c) { return (std::iscntrl(c) || c == '"' || c == '\'' || c == '\\'); }),
 					data.end());
 
@@ -311,6 +388,7 @@ namespace
 			rodsLog(LOG_ERROR, "Exception [%s]", _e.what());
 			THROW(SYS_INTERNAL_ERR, _e.what());
 		}
+#endif
 	} // invoke_indexing_event_full_text
 
 	void invoke_purge_event_full_text(ruleExecInfo_t* _rei,
@@ -318,6 +396,8 @@ namespace
 	                                  const std::string& _source_resource,
 	                                  const std::string& _index_name)
 	{
+		// TODO Replace use of elasticlient.
+#if 0
 		try {
 			std::string doc_type{"text"};
 			apply_document_type_policy(_rei, _object_path, _source_resource, &doc_type);
@@ -361,6 +441,7 @@ namespace
 			rodsLog(LOG_ERROR, "Exception [%s]", _e.what());
 			THROW(SYS_INTERNAL_ERR, _e.what());
 		}
+#endif
 	} // invoke_purge_event_full_text
 
 	std::string get_metadata_index_id(const std::string& _index_id,
@@ -390,7 +471,7 @@ namespace
 	{
 		try {
 			bool is_coll{};
-			elasticlient::Client client{config->hosts_};
+			//elasticlient::Client client{config->hosts_};
 			auto object_id = get_object_index_id(_rei, _object_path, &is_coll);
 
 			std::optional<nlohmann::json> jsonarray;
@@ -406,13 +487,19 @@ namespace
 			}
 			obj_meta["metadataEntries"] = *jsonarray;
 
-			const cpr::Response response =
-				ElasticSearch::index(config->es_version_, client, _index_name, "text", object_id, obj_meta.dump());
+			const auto response =
+				ElasticSearch::index(config->es_version_, _index_name, "text", object_id, obj_meta.dump());
 
-			if (response.status_code != 200 && response.status_code != 201) {
+			if (!response.has_value()) {
 				THROW(SYS_INTERNAL_ERR,
-				      boost::format("failed to index metadata [%s] [%s] [%s] for [%s] code [%d] message [%s]") %
-				          _attribute % _value % _unit % _object_path % response.status_code % response.text);
+					  fmt::format("failed to index metadata [{}] [{}] [{}] for [{}]. No response.",
+								  _attribute, _value, _unit, _object_path));
+			}
+
+			if (response->result_int() != 200 && response->result_int() != 201) {
+				THROW(SYS_INTERNAL_ERR,
+					  fmt::format("failed to index metadata [{}] [{}] [{}] for [{}] code [{}] message [{}]",
+								  _attribute, _value, _unit, _object_path, response->result_int(), response->body()));
 			}
 		}
 		catch (const irods::exception& _e) {
@@ -441,33 +528,34 @@ namespace
 	                                 const nlohmann::json& = {})
 	{
 		try {
-			elasticlient::Client client{config->hosts_};
+			//elasticlient::Client client{config->hosts_};
 			namespace fsvr = irods::experimental::filesystem;
 			// we now accept object id or path here, so pep_api_rm_coll_post can purge
 			std::string object_id{fsvr::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path)
 			                                                             : _object_path};
-			const cpr::Response response =
-				ElasticSearch::remove(config->es_version_, client, _index_name, "text", object_id);
-			switch (response.status_code) {
+			const auto response =
+				ElasticSearch::remove(config->es_version_, _index_name, "text", object_id);
+
+			if (!response.has_value()) {
+				THROW(SYS_INTERNAL_ERR,
+					  fmt::format("failed to index metadata [{}] [{}] [{}] for [{}]. No response.",
+								  _attribute, _value, _unit, _object_path));
+			}
+
+			switch (response->result_int()) {
 				// either the index has been deleted, or the AVU was cleared unexpectedly
 				case 404:
-					rodsLog(LOG_NOTICE,
-					        boost::str(
-								boost::format("elasticlient 404: no index entry for AVU (%s,%s,%s) on object '%s' in "
-					                          "index '%s'") %
-								_attribute % _value % _unit % _object_path % _index_name)
-					            .c_str());
+					rodsLog(LOG_NOTICE, fmt::format("elasticlient 404: no index entry for AVU ({}, {}, {}) on object [{}] in index [{}]", _attribute, _value, _unit, _object_path, _index_name).c_str());
 					break;
 				// routinely expected return codes ( not logged ):
 				case 200:
-					break;
 				case 201:
 					break;
 				// unexpected return codes:
 				default:
 					THROW(SYS_INTERNAL_ERR,
-					      boost::format("failed to index metadata [%s] [%s] [%s] for [%s] code [%d] message [%s]") %
-					          _attribute % _value % _unit % _object_path % response.status_code % response.text);
+					      fmt::format("failed to index metadata [{}] [{}] [{}] for [{}] code [{}] message [{}]",
+					          _attribute, _value, _unit, _object_path, response->result_int(), response->body()));
 			}
 		}
 		catch (const std::runtime_error& _e) {
@@ -481,217 +569,220 @@ namespace
 
 	} // invoke_purge_event_metadata
 
-} // namespace
+	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
+	{
+		RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
+		config = std::make_unique<configuration>(_instance_name);
+		object_index_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::index, "elasticsearch");
+		object_purge_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::purge, "elasticsearch");
+		metadata_index_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::index, "elasticsearch");
+		metadata_purge_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::purge, "elasticsearch");
 
-irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
-{
-	RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
-	config = std::make_unique<configuration>(_instance_name);
-	object_index_policy =
-		irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::index, "elasticsearch");
-	object_purge_policy =
-		irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::purge, "elasticsearch");
-	metadata_index_policy =
-		irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::index, "elasticsearch");
-	metadata_purge_policy =
-		irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::purge, "elasticsearch");
-
-	if (getRodsLogLevel() > LOG_NOTICE) {
-		elasticlient::setLogFunction(log_fcn);
-	}
-	return SUCCESS();
-}
-
-irods::error stop(irods::default_re_ctx&, const std::string&)
-{
-	return SUCCESS();
-}
-
-irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
-{
-	_ret = "irods_policy_recursive_rm_object_by_path" == _rn || object_index_policy == _rn ||
-	       object_purge_policy == _rn || metadata_index_policy == _rn || metadata_purge_policy == _rn;
-	return SUCCESS();
-}
-
-irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>& _rules)
-{
-	_rules.push_back(object_index_policy);
-	_rules.push_back(object_purge_policy);
-	_rules.push_back(metadata_index_policy);
-	_rules.push_back(metadata_purge_policy);
-	return SUCCESS();
-}
-
-irods::error exec_rule(irods::default_re_ctx&,
-                       const std::string& _rn,
-                       std::list<boost::any>& _args,
-                       irods::callback _eff_hdlr)
-{
-	ruleExecInfo_t* rei{};
-	const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
-
-	if (!err.ok()) {
-		return err;
+		if (getRodsLogLevel() > LOG_NOTICE) {
+			//elasticlient::setLogFunction(log_fcn);
+		}
+		return SUCCESS();
 	}
 
-	using nlohmann::json;
-	try {
-		if (_rn == object_index_policy) {
-			auto it = _args.begin();
-			const std::string object_path{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string source_resource{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string index_name{boost::any_cast<std::string>(*it)};
-			++it;
+	irods::error stop(irods::default_re_ctx&, const std::string&)
+	{
+		return SUCCESS();
+	}
 
-			invoke_indexing_event_full_text(rei, object_path, source_resource, index_name);
+	irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
+	{
+		_ret = "irods_policy_recursive_rm_object_by_path" == _rn || object_index_policy == _rn ||
+			   object_purge_policy == _rn || metadata_index_policy == _rn || metadata_purge_policy == _rn;
+		return SUCCESS();
+	}
+
+	irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>& _rules)
+	{
+		_rules.push_back(object_index_policy);
+		_rules.push_back(object_purge_policy);
+		_rules.push_back(metadata_index_policy);
+		_rules.push_back(metadata_purge_policy);
+		return SUCCESS();
+	}
+
+	irods::error exec_rule(irods::default_re_ctx&,
+						   const std::string& _rn,
+						   std::list<boost::any>& _args,
+						   irods::callback _eff_hdlr)
+	{
+		ruleExecInfo_t* rei{};
+		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
+
+		if (!err.ok()) {
+			return err;
 		}
-		else if (_rn == object_purge_policy) {
-			auto it = _args.begin();
-			const std::string object_path{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string source_resource{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string index_name{boost::any_cast<std::string>(*it)};
-			++it;
 
-			invoke_purge_event_full_text(rei, object_path, source_resource, index_name);
-		}
-		else if (_rn == metadata_index_policy || _rn == metadata_purge_policy) {
-			auto it = _args.begin();
-			const std::string object_path{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string attribute{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string value{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string unit{boost::any_cast<std::string>(*it)};
-			++it;
-			const std::string index_name{boost::any_cast<std::string>(*it)};
-			++it;
+		using nlohmann::json;
+		try {
+			if (_rn == object_index_policy) {
+				auto it = _args.begin();
+				const std::string object_path{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string source_resource{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string index_name{boost::any_cast<std::string>(*it)};
+				++it;
 
-			std::string obj_meta_str = "{}";
-
-			if (it != _args.end()) {
-				obj_meta_str = boost::any_cast<std::string>(*it++);
+				invoke_indexing_event_full_text(rei, object_path, source_resource, index_name);
 			}
+			else if (_rn == object_purge_policy) {
+				auto it = _args.begin();
+				const std::string object_path{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string source_resource{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string index_name{boost::any_cast<std::string>(*it)};
+				++it;
 
-			json obj_meta = nlohmann::json::parse(obj_meta_str);
-
-			if (_rn == metadata_purge_policy && attribute.empty()) { //  purge with AVU by name?
-
-				invoke_purge_event_metadata( //  delete the indexed entry
-					rei,
-					object_path,
-					attribute,
-					value,
-					unit,
-					index_name);
+				invoke_purge_event_full_text(rei, object_path, source_resource, index_name);
 			}
-			else {
-				invoke_indexing_event_metadata( // update the indexed entry
-					rei,
-					object_path,
-					attribute,
-					value,
-					unit,
-					index_name,
-					obj_meta);
-			}
-		}
-		else if (_rn == "irods_policy_recursive_rm_object_by_path") {
-			using nlohmann::json;
-			auto it = _args.begin();
-			const std::string the_path{boost::any_cast<std::string>(*it)};
-			std::advance(it, 2);
-			const json recurse_info = json::parse(boost::any_cast<std::string&>(*it));
-			auto escape = [](std::string path_) -> std::string {
-				boost::replace_all(path_, "\\", "\\\\");
-				boost::replace_all(path_, "?", "\\?");
-				boost::replace_all(path_, "*", "\\*");
-				return path_;
-			};
-			auto escaped_path = escape(the_path);
-			std::string JtopLevel = json{{"query", {{"match", {{"absolutePath", escaped_path}}}}}}.dump();
-			std::string JsubObject{""};
-			try {
-				if (recurse_info["is_collection"].get<bool>()) {
-					JsubObject =
-						json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}.dump();
+			else if (_rn == metadata_index_policy || _rn == metadata_purge_policy) {
+				auto it = _args.begin();
+				const std::string object_path{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string attribute{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string value{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string unit{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string index_name{boost::any_cast<std::string>(*it)};
+				++it;
+
+				std::string obj_meta_str = "{}";
+
+				if (it != _args.end()) {
+					obj_meta_str = boost::any_cast<std::string>(*it++);
+				}
+
+				json obj_meta = nlohmann::json::parse(obj_meta_str);
+
+				if (_rn == metadata_purge_policy && attribute.empty()) { //  purge with AVU by name?
+					invoke_purge_event_metadata( //  delete the indexed entry
+						rei,
+						object_path,
+						attribute,
+						value,
+						unit,
+						index_name);
+				}
+				else {
+					invoke_indexing_event_metadata( // update the indexed entry
+						rei,
+						object_path,
+						attribute,
+						value,
+						unit,
+						index_name,
+						obj_meta);
 				}
 			}
-			catch (const std::domain_error& e) {
-				return ERROR(
-					-1, fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}", e.what()));
-			}
-			elasticlient::Client client{config->hosts_};
+			else if (_rn == "irods_policy_recursive_rm_object_by_path") {
+				using nlohmann::json;
+				auto it = _args.begin();
+				const std::string the_path{boost::any_cast<std::string>(*it)};
+				std::advance(it, 2);
+				const json recurse_info = json::parse(boost::any_cast<std::string&>(*it));
+				auto escape = [](std::string path_) -> std::string {
+					boost::replace_all(path_, "\\", "\\\\");
+					boost::replace_all(path_, "?", "\\?");
+					boost::replace_all(path_, "*", "\\*");
+					return path_;
+				};
+				auto escaped_path = escape(the_path);
+				std::string JtopLevel = json{{"query", {{"match", {{"absolutePath", escaped_path}}}}}}.dump();
+				std::string JsubObject{""};
+				try {
+					if (recurse_info["is_collection"].get<bool>()) {
+						JsubObject =
+							json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}.dump();
+					}
+				}
+				catch (const std::domain_error& e) {
+					return ERROR(
+						-1, fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}", e.what()));
+				}
+				//elasticlient::Client client{config->hosts_};
 
-			try {
-				rsComm_t& comm = *rei->rsComm;
-				for (const std::string& e : recurse_info["indices"]) {
-					const std::string del_by_query_URL{e + "/_delete_by_query"};
-					for (const std::string& json_out : {JtopLevel, JsubObject}) {
-						if (json_out == "") {
-							continue;
-						}
-						auto response = client.performRequest(HTTPMethod::POST, del_by_query_URL, json_out);
-						if (response.status_code != 200) {
-							irods::log(LOG_WARNING,
-							           fmt::format("_delete_by_query - response code not 200"
-							                       "\n\t- for path [{}]"
-							                       "\n\t- escaped as [{}]"
-							                       "\n\t- json request body is [{}]",
-							                       the_path,
-							                       escaped_path,
-							                       json_out));
+				try {
+					rsComm_t& comm = *rei->rsComm;
+					for (const std::string& e : recurse_info["indices"]) {
+						const std::string del_by_query_URL{e + "/_delete_by_query"};
+						for (const std::string& json_out : {JtopLevel, JsubObject}) {
+							if (json_out == "") {
+								continue;
+							}
+
+							const auto response = send_http_request("localhost", "9200", http::verb::post, del_by_query_URL, json_out);
+
+							if (!response.has_value()) {
+								rodsLog(LOG_ERROR, fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
+								continue;
+							}
+
+							if (response->result_int() != 200) {
+								rodsLog(LOG_WARNING,
+										   fmt::format("_delete_by_query - response code not 200"
+													   "\n\t- for path [{}]"
+													   "\n\t- escaped as [{}]"
+													   "\n\t- json request body is [{}]",
+													   the_path,
+													   escaped_path,
+													   json_out).c_str());
+							}
 						}
 					}
 				}
+				//catch (const elasticlient::ConnectionException& e) {
+					//rodsLog(LOG_ERROR, fmt::format("Cannot reach elasticsearch on : [{}]", fmt::join(config->hosts_, ", ")).c_str());
+				//}
+				catch (const nlohmann::json::parse_error& e) {
+					rodsLog(LOG_ERROR, fmt::format("JSON parse exception : [{}]", e.what()).c_str());
+				}
+			} // "irods_policy_recursive_rm_object_by_path"
+			else {
+				return ERROR(SYS_NOT_SUPPORTED, _rn);
 			}
-			catch (const elasticlient::ConnectionException& e) {
-				irods::log(
-					LOG_ERROR, fmt::format("Cannot reach elasticsearch on : [{}]", fmt::join(config->hosts_, ", ")));
-			}
-			catch (const nlohmann::json::parse_error& e) {
-				irods::log(LOG_ERROR, fmt::format("JSON parse exception : [{}]", e.what()));
-			}
-		} // "irods_policy_recursive_rm_object_by_path"
-		else {
-			return ERROR(SYS_NOT_SUPPORTED, _rn);
 		}
-	}
-	catch (const std::invalid_argument& _e) {
-		irods::indexing::exception_to_rerror(SYS_NOT_SUPPORTED, _e.what(), rei->rsComm->rError);
-		return ERROR(SYS_NOT_SUPPORTED, _e.what());
-	}
-	catch (const boost::bad_any_cast& _e) {
-		irods::indexing::exception_to_rerror(INVALID_ANY_CAST, _e.what(), rei->rsComm->rError);
-		return ERROR(SYS_NOT_SUPPORTED, _e.what());
-	}
-	catch (const irods::exception& _e) {
-		irods::indexing::exception_to_rerror(_e, rei->rsComm->rError);
-		return irods::error(_e);
-	}
+		catch (const std::invalid_argument& _e) {
+			irods::indexing::exception_to_rerror(SYS_NOT_SUPPORTED, _e.what(), rei->rsComm->rError);
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
+		}
+		catch (const boost::bad_any_cast& _e) {
+			irods::indexing::exception_to_rerror(INVALID_ANY_CAST, _e.what(), rei->rsComm->rError);
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
+		}
+		catch (const irods::exception& _e) {
+			irods::indexing::exception_to_rerror(_e, rei->rsComm->rError);
+			return irods::error(_e);
+		}
 
-	return err;
+		return err;
+	} // exec_rule
 
-} // exec_rule
+	irods::error exec_rule_text(irods::default_re_ctx&,
+								const std::string&,
+								msParamArray_t*,
+								const std::string&,
+								irods::callback)
+	{
+		return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_text is not supported");
+	} // exec_rule_text
 
-irods::error exec_rule_text(irods::default_re_ctx&,
-                            const std::string&,
-                            msParamArray_t*,
-                            const std::string&,
-                            irods::callback)
-{
-	return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_text is not supported");
-} // exec_rule_text
-
-irods::error exec_rule_expression(irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback)
-{
-	return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_expression is not supported");
-} // exec_rule_expression
+	irods::error exec_rule_expression(irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback)
+	{
+		return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_expression is not supported");
+	} // exec_rule_expression
+} // namespace
 
 extern "C" irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(const std::string& _inst_name,
                                                                                const std::string& _context)
@@ -721,5 +812,4 @@ extern "C" irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(c
 		std::function<irods::error(irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback)>(
 			exec_rule_expression));
 	return re;
-
 } // plugin_factory

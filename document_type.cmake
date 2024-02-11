@@ -33,9 +33,9 @@ target_include_directories(
     ${IRODS_INCLUDE_DIRS}
     ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
     ${IRODS_EXTERNALS_FULLPATH_FMT}/include
-    ${IRODS_EXTERNALS_FULLPATH_JANSSON}/include
-    ${IRODS_EXTERNALS_FULLPATH_FMT}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    #${IRODS_EXTERNALS_FULLPATH_JANSSON}/include
+    #${IRODS_EXTERNALS_FULLPATH_FMT}/include
+    #${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
 target_link_libraries(
