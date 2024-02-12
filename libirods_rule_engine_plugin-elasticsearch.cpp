@@ -1,6 +1,3 @@
-#include "boost/beast/core/tcp_stream.hpp"
-#include "boost/beast/http/string_body.hpp"
-#include "boost/system/detail/errc.hpp"
 #include "configuration.hpp"
 #include "plugin_specific_configuration.hpp"
 #include "utilities.hpp"
@@ -10,6 +7,7 @@
 #include <irods/irods_log.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
+#include <irods/rodsErrorTable.h>
 #include <irods/rsModAVUMetadata.hpp>
 
 #define IRODS_QUERY_ENABLE_SERVER_SIDE_API
@@ -44,18 +42,45 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace
 {
 	namespace beast = boost::beast;
 	namespace http = beast::http;
 
-	auto send_http_request(const std::string_view _host,
-						   const std::string_view _port,
+	using json = nlohmann::json;
+
+	auto send_http_request(const std::string_view _host_port,
 						   http::verb _verb,
 						   const std::string_view _target,
-						   const std::string_view _body) -> std::optional<http::response<http::string_body>>
+						   const std::string_view _body = "") -> std::optional<http::response<http::string_body>>
 	{
+		// TODO These host/port checks should happen at plugin startup.
+		// There's no point paying for these on every http request.
+
+		// TODO Replace this with Boost.URL. See the HTTP API for an example.
+
+		if (_host_port.empty()) {
+			rodsLog(LOG_ERROR, "%s: Empty host and/or port.", __func__);
+			return std::nullopt;
+		}
+
+		const auto colon_pos = _host_port.rfind(':');
+		if (colon_pos == std::string_view::npos) {
+			rodsLog(LOG_ERROR, "%s: Invalid value for host and port. Possibly missing port number.", __func__);
+			return std::nullopt;
+		}
+
+		const auto host = _host_port.substr(0, colon_pos);
+		const auto port = _host_port.substr(colon_pos + 1);
+
+		if (port.empty()) {
+			rodsLog(LOG_ERROR, fmt::format("{}: Missing port number for host [{}].", __func__, host).c_str());
+			return std::nullopt;
+		}
+
 		namespace net = boost::asio;
 		using tcp = net::ip::tcp;
 
@@ -65,7 +90,7 @@ namespace
 			tcp::resolver resolver{ioc};
 			beast::tcp_stream stream{ioc};
 
-			const auto results = resolver.resolve(_host, _port);
+			const auto results = resolver.resolve(host, port);
 			stream.connect(results);
 
 			http::request<http::string_body> req{_verb, _target, 11};
@@ -111,42 +136,6 @@ namespace
 
 		return std::nullopt;
 	}
-
-	namespace ElasticSearch
-	{
-		auto index(const std::string& version,
-				   const std::string& index_name,
-				   const std::string& mapping_type,
-				   const std::string& doc_id,
-				   const std::string& body)
-		{
-#if 0
-			if (version < "7.") {
-				return cl.index(index_name, mapping_type, doc_id, body);
-			}
-#endif
-
-			// TODO op_type=create is new. It instructs elasticsearch to create if the target doesn't exist.
-			// I don't know that we want this.
-			const auto target = fmt::format("{}/_doc/{}?op_type=create", index_name, doc_id);
-			return send_http_request("localhost", "9200", http::verb::put, target, body);
-		}
-
-		auto remove(const std::string& version,
-		            const std::string& index_name,
-		            const std::string& mapping_type,
-		            const std::string& doc_id)
-		{
-#if 0
-			if (version < "7.") {
-				return cl.remove(index_name, mapping_type, doc_id);
-			}
-#endif
-
-			const auto target = fmt::format("{}/_doc/{}", index_name, doc_id);
-			return send_http_request("localhost", "9200", http::verb::delete_, target, "");
-		}
-	} // namespace ElasticSearch
 
 	using string_t = std::string;
 
@@ -205,7 +194,6 @@ namespace
 		std::string policy_name =
 			irods::indexing::policy::compose_policy_name(irods::indexing::policy::prefix, "document_type_elastic");
 		irods::indexing::invoke_policy(_rei, policy_name, args);
-
 	} // apply_document_type_policy
 
 	//void log_fcn(elasticlient::LogLevel, const std::string& _msg)
@@ -313,64 +301,54 @@ namespace
 	                                     const std::string& _source_resource,
 	                                     const std::string& _index_name)
 	{
-		// TODO Replace use of elasticlient.
-#if 0
 		try {
-			std::string doc_type{"text"};
+			if (config->bulk_count_ < 0) {
+				// TODO Do we protect against this?
+			}
+
+			std::string doc_type{"text"}; // TODO What is this for?
 			apply_document_type_policy(_rei, _object_path, _source_resource, &doc_type);
 
-			const long read_size{config->read_size_};
-			const int bulk_count{config->bulk_count_};
-			const std::string object_id{get_object_index_id(_rei, _object_path)};
-
-			std::shared_ptr<elasticlient::Client> client = std::make_shared<elasticlient::Client>(config->hosts_);
-			elasticlient::Bulk bulkIndexer(client);
-			elasticlient::SameIndexBulkData bulk(_index_name, bulk_count);
-
-			char read_buff[read_size];
+			const std::string object_id = get_object_index_id(_rei, _object_path);
+			std::vector<char> buffer(config->read_size_);
 			irods::experimental::io::server::basic_transport<char> xport(*_rei->rsComm);
-			irods::experimental::io::idstream ds{xport, _object_path};
+			irods::experimental::io::idstream in{xport, _object_path};
 
 			int chunk_counter{0};
 			bool need_final_perform{false};
-			while (ds) {
-				ds.read(read_buff, read_size);
-				std::string data{read_buff};
+			std::stringstream ss;
 
-				// filter out new line characters
-				data.erase(
-					std::remove_if(data.begin(),
-				                   data.end(),
-								   // TODO wchar_t feels wrong here. Investigate.
-				                   [](wchar_t c) { return (std::iscntrl(c) || c == '"' || c == '\'' || c == '\\'); }),
-					data.end());
+			while (in) {
+				in.read(buffer.data(), buffer.size());
 
-				std::string index_id{boost::str(boost::format("%s_%d") % object_id % chunk_counter)};
-				++chunk_counter;
+				// The indexing instruction.
+				ss << json{{"index", {
+					{"_id", fmt::format("{}_{}", object_id, chunk_counter++)}
+				}}}.dump() << '\n';
 
-				std::string payload{boost::str(boost::format("{ \"absolutePath\" : \"%s\", \"data\" : \"%s\" }") %
-				                               _object_path % data)};
+				// The data to index.
+				ss << json{
+					{"absolutePath", _object_path},
+					{"data", std::string_view(buffer.data(), in.gcount())}
+				}.dump() << '\n';
 
-				need_final_perform = true;
-				bool done = bulk.indexDocument(doc_type, index_id, payload.data());
-				if (done) {
-					need_final_perform = false;
-					// have reached bulk_count chunks
-					auto error_count = bulkIndexer.perform(bulk);
-					if (error_count > 0) {
-						rodsLog(
-							LOG_ERROR, "Encountered %d errors when indexing [%s]", error_count, _object_path.c_str());
-					}
-					bulk.clear();
+				// TODO Send bulk request if chunk counter has reached bulk limit.
+				// Clear the stringstream if the request is sent.
+				if (chunk_counter == config->bulk_count_) {
+					chunk_counter = 0;
+					ss.str("");
+					const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str()); // TODO C++20 supports .view(), but clang 13 doesn't appear to implement it :-(
+					(void) res;
+					// TODO Check response.
 				}
-			} // while
+			}
 
-			if (need_final_perform) {
-				auto error_count = bulkIndexer.perform(bulk);
-				if (error_count > 0) {
-					rodsLog(LOG_ERROR, "Encountered %d errors when indexing [%s]", error_count, _object_path.c_str());
-				}
-				bulk.clear();
+			if (chunk_counter > 0) {
+				// TODO Elasticsearch limits the maximum size of a HTTP request to 100mb.
+				// See https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html.
+				const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
+				(void) res;
+				// TODO Check response.
 			}
 		}
 		catch (const irods::exception& _e) {
@@ -388,7 +366,6 @@ namespace
 			rodsLog(LOG_ERROR, "Exception [%s]", _e.what());
 			THROW(SYS_INTERNAL_ERR, _e.what());
 		}
-#endif
 	} // invoke_indexing_event_full_text
 
 	void invoke_purge_event_full_text(ruleExecInfo_t* _rei,
@@ -396,36 +373,33 @@ namespace
 	                                  const std::string& _source_resource,
 	                                  const std::string& _index_name)
 	{
-		// TODO Replace use of elasticlient.
-#if 0
 		try {
-			std::string doc_type{"text"};
+			std::string doc_type{"text"}; // TODO What is this for?
 			apply_document_type_policy(_rei, _object_path, _source_resource, &doc_type);
 
-			const long read_size{config->read_size_};
-			const int bulk_count{config->bulk_count_};
 			const std::string object_id{get_object_index_id(_rei, _object_path)};
-			elasticlient::Client client{config->hosts_};
-
 			int chunk_counter{0};
-
 			bool done{false};
+
 			while (!done) {
-				std::string index_id{boost::str(boost::format("%s_%d") % object_id % chunk_counter)};
+				//elasticlient::Client client{config->hosts_};
+				// TODO doc_type appeared to be used in place of _doc. But why?
+				const auto response = send_http_request(config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
 				++chunk_counter;
-				const cpr::Response response = client.remove(_index_name, doc_type, index_id);
-				if (response.status_code != 200) {
+
+				if (!response.has_value()) {
+					rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
+					continue;
+				}
+
+				if (response->result_int() != 200) {
 					done = true;
-					if (response.status_code == 404) { // meaningful for logging
-						rodsLog(LOG_NOTICE,
-						        boost::str(
-									boost::format("elasticlient 404: no index entry for chunk (%d) of object_id '%d' "
-						                          "in index '%s'") %
-									chunk_counter % object_id % _index_name)
-						            .c_str());
+					if (response->result_int() == 404) { // meaningful for logging
+						rodsLog(LOG_NOTICE, fmt::format("elasticlient 404: no index entry for chunk ({}) of object_id [{}] in index [{}]",
+									chunk_counter, object_id, _index_name).c_str());
 					}
 				}
-			} // while
+			}
 		}
 		catch (const std::runtime_error& _e) {
 			rodsLog(LOG_ERROR, "Exception [%s]", _e.what());
@@ -441,7 +415,6 @@ namespace
 			rodsLog(LOG_ERROR, "Exception [%s]", _e.what());
 			THROW(SYS_INTERNAL_ERR, _e.what());
 		}
-#endif
 	} // invoke_purge_event_full_text
 
 	std::string get_metadata_index_id(const std::string& _index_id,
@@ -471,7 +444,6 @@ namespace
 	{
 		try {
 			bool is_coll{};
-			//elasticlient::Client client{config->hosts_};
 			auto object_id = get_object_index_id(_rei, _object_path, &is_coll);
 
 			std::optional<nlohmann::json> jsonarray;
@@ -487,8 +459,9 @@ namespace
 			}
 			obj_meta["metadataEntries"] = *jsonarray;
 
-			const auto response =
-				ElasticSearch::index(config->es_version_, _index_name, "text", object_id, obj_meta.dump());
+			//elasticlient::Client client{config->hosts_};
+			//const auto target = fmt::format("{}/_doc/{}?op_type=create", index_name, doc_id);
+			const auto response = send_http_request(config->hosts_[0], http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
 
 			if (!response.has_value()) {
 				THROW(SYS_INTERNAL_ERR,
@@ -528,24 +501,22 @@ namespace
 	                                 const nlohmann::json& = {})
 	{
 		try {
-			//elasticlient::Client client{config->hosts_};
-			namespace fsvr = irods::experimental::filesystem;
+			namespace fs = irods::experimental::filesystem;
+
 			// we now accept object id or path here, so pep_api_rm_coll_post can purge
-			std::string object_id{fsvr::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path)
-			                                                             : _object_path};
-			const auto response =
-				ElasticSearch::remove(config->es_version_, _index_name, "text", object_id);
+			std::string object_id{fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path};
+
+			//elasticlient::Client client{config->hosts_};
+			const auto response = send_http_request(config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
 
 			if (!response.has_value()) {
-				THROW(SYS_INTERNAL_ERR,
-					  fmt::format("failed to index metadata [{}] [{}] [{}] for [{}]. No response.",
-								  _attribute, _value, _unit, _object_path));
+				rodsLog(LOG_ERROR, fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
 			}
 
 			switch (response->result_int()) {
 				// either the index has been deleted, or the AVU was cleared unexpectedly
 				case 404:
-					rodsLog(LOG_NOTICE, fmt::format("elasticlient 404: no index entry for AVU ({}, {}, {}) on object [{}] in index [{}]", _attribute, _value, _unit, _object_path, _index_name).c_str());
+					rodsLog(LOG_NOTICE, fmt::format("received HTTP status code of 404: no index entry for AVU ({}, {}, {}) on object [{}] in index [{}]", _attribute, _value, _unit, _object_path, _index_name).c_str());
 					break;
 				// routinely expected return codes ( not logged ):
 				case 200:
@@ -566,7 +537,6 @@ namespace
 			rodsLog(LOG_ERROR, "Exception [%s]", _e.what());
 			THROW(SYS_INTERNAL_ERR, _e.what());
 		}
-
 	} // invoke_purge_event_metadata
 
 	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
@@ -687,20 +657,21 @@ namespace
 				}
 			}
 			else if (_rn == "irods_policy_recursive_rm_object_by_path") {
-				using nlohmann::json;
 				auto it = _args.begin();
 				const std::string the_path{boost::any_cast<std::string>(*it)};
 				std::advance(it, 2);
 				const json recurse_info = json::parse(boost::any_cast<std::string&>(*it));
-				auto escape = [](std::string path_) -> std::string {
-					boost::replace_all(path_, "\\", "\\\\");
-					boost::replace_all(path_, "?", "\\?");
-					boost::replace_all(path_, "*", "\\*");
-					return path_;
-				};
-				auto escaped_path = escape(the_path);
+
+				const auto escaped_path = [p = the_path]() mutable {
+					boost::replace_all(p, "\\", "\\\\");
+					boost::replace_all(p, "?", "\\?");
+					boost::replace_all(p, "*", "\\*");
+					return p;
+				}();
+
 				std::string JtopLevel = json{{"query", {{"match", {{"absolutePath", escaped_path}}}}}}.dump();
-				std::string JsubObject{""};
+				std::string JsubObject;
+
 				try {
 					if (recurse_info["is_collection"].get<bool>()) {
 						JsubObject =
@@ -708,21 +679,19 @@ namespace
 					}
 				}
 				catch (const std::domain_error& e) {
+					// TODO What is this about? Why std::domain_error?
 					return ERROR(
 						-1, fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}", e.what()));
 				}
-				//elasticlient::Client client{config->hosts_};
 
 				try {
-					rsComm_t& comm = *rei->rsComm;
-					for (const std::string& e : recurse_info["indices"]) {
-						const std::string del_by_query_URL{e + "/_delete_by_query"};
+					for (const std::string& index_name : recurse_info["indices"]) {
 						for (const std::string& json_out : {JtopLevel, JsubObject}) {
-							if (json_out == "") {
+							if (json_out.empty()) {
 								continue;
 							}
 
-							const auto response = send_http_request("localhost", "9200", http::verb::post, del_by_query_URL, json_out);
+							const auto response = send_http_request(config->hosts_[0], http::verb::post, fmt::format("{}/_delete_by_query", index_name), json_out);
 
 							if (!response.has_value()) {
 								rodsLog(LOG_ERROR, fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
@@ -742,9 +711,6 @@ namespace
 						}
 					}
 				}
-				//catch (const elasticlient::ConnectionException& e) {
-					//rodsLog(LOG_ERROR, fmt::format("Cannot reach elasticsearch on : [{}]", fmt::join(config->hosts_, ", ")).c_str());
-				//}
 				catch (const nlohmann::json::parse_error& e) {
 					rodsLog(LOG_ERROR, fmt::format("JSON parse exception : [{}]", e.what()).c_str());
 				}
