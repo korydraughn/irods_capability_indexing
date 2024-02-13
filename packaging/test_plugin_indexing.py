@@ -248,7 +248,7 @@ def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEA
     maptype = "" if es7_or_later() else "/text"
     track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}{maptype}/_search?pretty=true{track_num_hits_as_int} -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}{maptype}/_search?pretty=true{track_num_hits_as_int} -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "metadataEntries"],
@@ -275,7 +275,7 @@ def search_index_for_object_path(index_name, path_component, extra_source_fields
     path_component_matcher = ("*/" + path_component + ("/*" if not path_component.endswith("$") else "")).rstrip("$")
     track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true{track_num_hits_as_int} -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/text/_search?pretty=true{track_num_hits_as_int} -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath" {extra_source_fields} ],
@@ -296,7 +296,7 @@ def search_index_for_object_path(index_name, path_component, extra_source_fields
 def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
     track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true{track_num_hits_as_int} -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/text/_search?pretty=true{track_num_hits_as_int} -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "data"],

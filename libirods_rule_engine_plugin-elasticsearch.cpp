@@ -30,6 +30,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
+#include <boost/url.hpp>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -52,7 +53,7 @@ namespace
 
 	using json = nlohmann::json;
 
-	auto send_http_request(const std::string_view _host_port,
+	auto send_http_request(const std::string_view _service_url,
 						   http::verb _verb,
 						   const std::string_view _target,
 						   const std::string_view _body = "") -> std::optional<http::response<http::string_body>>
@@ -60,24 +61,16 @@ namespace
 		// TODO These host/port checks should happen at plugin startup.
 		// There's no point paying for these on every http request.
 
-		// TODO Replace this with Boost.URL. See the HTTP API for an example.
-
-		if (_host_port.empty()) {
-			rodsLog(LOG_ERROR, "%s: Empty host and/or port.", __func__);
+		if (_service_url.empty()) {
+			rodsLog(LOG_ERROR, "%s: Empty service URL.", __func__);
 			return std::nullopt;
 		}
 
-		const auto colon_pos = _host_port.rfind(':');
-		if (colon_pos == std::string_view::npos) {
-			rodsLog(LOG_ERROR, "%s: Invalid value for host and port. Possibly missing port number.", __func__);
-			return std::nullopt;
-		}
+		namespace urls = boost::urls;
 
-		const auto host = _host_port.substr(0, colon_pos);
-		const auto port = _host_port.substr(colon_pos + 1);
-
-		if (port.empty()) {
-			rodsLog(LOG_ERROR, fmt::format("{}: Missing port number for host [{}].", __func__, host).c_str());
+		urls::result<urls::url_view> result = urls::parse_uri(_service_url);
+		if (!result) {
+			rodsLog(LOG_ERROR, fmt::format("{}: Could not parse service URL [{}].", __func__, _service_url).c_str());
 			return std::nullopt;
 		}
 
@@ -90,7 +83,7 @@ namespace
 			tcp::resolver resolver{ioc};
 			beast::tcp_stream stream{ioc};
 
-			const auto results = resolver.resolve(host, port);
+			const auto results = resolver.resolve(result->host(), result->port());
 			stream.connect(results);
 
 			http::request<http::string_body> req{_verb, _target, 11};

@@ -47,6 +47,7 @@ target_link_libraries(
   ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so
   ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_regex.so
   ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so
+  ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_url.so
   ${IRODS_EXTERNALS_FULLPATH_FMT}/lib/libfmt.so
   irods_common
   nlohmann_json::nlohmann_json
