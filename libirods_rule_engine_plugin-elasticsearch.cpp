@@ -96,7 +96,13 @@ namespace
 				{
 					std::stringstream ss;
 					ss << req;
-					rodsLog(LOG_NOTICE, fmt::format("{}: sending request = [{}]", __func__, ss.str()).c_str());
+					const auto s = ss.str();
+					if (s.size() > 256) {
+						rodsLog(LOG_NOTICE, fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256)).c_str());
+					}
+					else {
+						rodsLog(LOG_NOTICE, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
+					}
 				}
 				req.prepare_payload();
 			}
@@ -319,11 +325,18 @@ namespace
 					{"_id", fmt::format("{}_{}", object_id, chunk_counter++)}
 				}}}.dump() << '\n';
 
+				// The defaults for the .dump() member function.
+				constexpr int indent = -1;
+				constexpr char indent_char = ' ';
+				constexpr bool ensure_ascii = false;
+
 				// The data to index.
+				// The version of .dump() invoked here instructs the library to ignore
+				// invalid UTF-8 sequences. All bytes are copied to the output unchanged.
 				ss << json{
 					{"absolutePath", _object_path},
 					{"data", std::string_view(buffer.data(), in.gcount())}
-				}.dump() << '\n';
+				}.dump(indent, indent_char, ensure_ascii, json::error_handler_t::ignore) << '\n';
 
 				// TODO Send bulk request if chunk counter has reached bulk limit.
 				// Clear the stringstream if the request is sent.
