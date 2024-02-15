@@ -244,7 +244,7 @@ def install_python3_virtualenv_with_python_irodsclient(PATH='~/py3',preTestPRCIn
 
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}{maptype}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "metadataEntries"],
