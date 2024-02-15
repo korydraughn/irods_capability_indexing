@@ -203,7 +203,7 @@ namespace irods::indexing
 			static const std::string index{"irods_policy_indexing_collection_index"};
 			static const std::string purge{"irods_policy_indexing_collection_purge"};
 		} // namespace collection
-	} // namespace policy
+	}     // namespace policy
 
 	std::string operation_and_index_types_to_policy_name(const std::string& _operation_type,
 	                                                     const std::string& _index_type);
