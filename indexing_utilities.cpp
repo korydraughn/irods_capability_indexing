@@ -601,8 +601,7 @@ namespace irods::indexing
 		using json = nlohmann::json;
 
 		// FIXME UB! Leading underscore followed by capital letter!
-		const auto& [_ID_bool, _obj_optional_ID] = kws_get<std::string>(
-			_extra_options, "_obj_optional_ID");
+		const auto& [_ID_bool, _obj_optional_ID] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
 		const auto& [_tag_bool, job_category_tag] = kws_get<std::string>(_extra_options, "job_category_tag");
 
 		json rule_obj;

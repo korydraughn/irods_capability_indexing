@@ -54,9 +54,9 @@ namespace
 	using json = nlohmann::json;
 
 	auto send_http_request(const std::string_view _service_url,
-						   http::verb _verb,
-						   const std::string_view _target,
-						   const std::string_view _body = "") -> std::optional<http::response<http::string_body>>
+	                       http::verb _verb,
+	                       const std::string_view _target,
+	                       const std::string_view _body = "") -> std::optional<http::response<http::string_body>>
 	{
 		// TODO These host/port checks should happen at plugin startup.
 		// There's no point paying for these on every http request.
@@ -98,7 +98,9 @@ namespace
 					ss << req;
 					const auto s = ss.str();
 					if (s.size() > 256) {
-						rodsLog(LOG_NOTICE, fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256)).c_str());
+						rodsLog(LOG_NOTICE,
+						        fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
+						            .c_str());
 					}
 					else {
 						rodsLog(LOG_NOTICE, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
@@ -197,7 +199,7 @@ namespace
 
 	//void log_fcn(elasticlient::LogLevel, const std::string& _msg)
 	//{
-		//rodsLog(LOG_DEBUG, "ELASTICLIENT :: [%s]", _msg.c_str());
+	//rodsLog(LOG_DEBUG, "ELASTICLIENT :: [%s]", _msg.c_str());
 	//} // log_fcn
 
 	std::string generate_id()
@@ -321,9 +323,11 @@ namespace
 				in.read(buffer.data(), buffer.size());
 
 				// The indexing instruction.
+				// clang-format off
 				ss << json{{"index", {
 					{"_id", fmt::format("{}_{}", object_id, chunk_counter++)}
 				}}}.dump() << '\n';
+				// clang-format on
 
 				// The defaults for the .dump() member function.
 				constexpr int indent = -1;
@@ -333,17 +337,26 @@ namespace
 				// The data to index.
 				// The version of .dump() invoked here instructs the library to ignore
 				// invalid UTF-8 sequences. All bytes are copied to the output unchanged.
+				// clang-format off
 				ss << json{
 					{"absolutePath", _object_path},
 					{"data", std::string_view(buffer.data(), in.gcount())}
 				}.dump(indent, indent_char, ensure_ascii, json::error_handler_t::ignore) << '\n';
+				// clang-format on
 
 				// Send bulk request if chunk counter has reached bulk limit.
 				if (chunk_counter == config->bulk_count_) {
 					chunk_counter = 0;
-					const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str()); // TODO C++20 supports .view(), but clang 13 doesn't appear to implement it :-(
-					(void) res;
-					// TODO Check response.
+
+					const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
+
+					if (!res.has_value()) {
+						rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
+					}
+					else {
+						rodsLog(LOG_ERROR, "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]", __func__, res->result_int());
+					}
+
 					ss.str("");
 				}
 			}
@@ -351,9 +364,15 @@ namespace
 			if (chunk_counter > 0) {
 				// Elasticsearch limits the maximum size of a HTTP request to 100mb.
 				// See https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html.
-				const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
-				(void) res;
-				// TODO Check response.
+				const auto res =
+					send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
+
+				if (!res.has_value()) {
+					rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
+				}
+				else {
+					rodsLog(LOG_ERROR, "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]", __func__, res->result_int());
+				}
 			}
 		}
 		catch (const irods::exception& _e) {
@@ -389,7 +408,10 @@ namespace
 			while (!done) {
 				//elasticlient::Client client{config->hosts_};
 				// TODO doc_type appeared to be used in place of _doc. But why?
-				const auto response = send_http_request(config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
+				const auto response =
+					send_http_request(config->hosts_[0],
+				                      http::verb::delete_,
+				                      fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
 				++chunk_counter;
 
 				if (!response.has_value()) {
@@ -400,8 +422,13 @@ namespace
 				if (response->result_int() != 200) {
 					done = true;
 					if (response->result_int() == 404) { // meaningful for logging
-						rodsLog(LOG_NOTICE, fmt::format("elasticlient 404: no index entry for chunk ({}) of object_id [{}] in index [{}]",
-									chunk_counter, object_id, _index_name).c_str());
+						rodsLog(LOG_NOTICE,
+						        fmt::format(
+									"elasticlient 404: no index entry for chunk ({}) of object_id [{}] in index [{}]",
+									chunk_counter,
+									object_id,
+									_index_name)
+						            .c_str());
 					}
 				}
 			}
@@ -466,18 +493,27 @@ namespace
 
 			//elasticlient::Client client{config->hosts_};
 			//const auto target = fmt::format("{}/_doc/{}?op_type=create", index_name, doc_id);
-			const auto response = send_http_request(config->hosts_[0], http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
+			const auto response = send_http_request(
+				config->hosts_[0], http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
 
 			if (!response.has_value()) {
 				THROW(SYS_INTERNAL_ERR,
-					  fmt::format("failed to index metadata [{}] [{}] [{}] for [{}]. No response.",
-								  _attribute, _value, _unit, _object_path));
+				      fmt::format("failed to index metadata [{}] [{}] [{}] for [{}]. No response.",
+				                  _attribute,
+				                  _value,
+				                  _unit,
+				                  _object_path));
 			}
 
 			if (response->result_int() != 200 && response->result_int() != 201) {
 				THROW(SYS_INTERNAL_ERR,
-					  fmt::format("failed to index metadata [{}] [{}] [{}] for [{}] code [{}] message [{}]",
-								  _attribute, _value, _unit, _object_path, response->result_int(), response->body()));
+				      fmt::format("failed to index metadata [{}] [{}] [{}] for [{}] code [{}] message [{}]",
+				                  _attribute,
+				                  _value,
+				                  _unit,
+				                  _object_path,
+				                  response->result_int(),
+				                  response->body()));
 			}
 		}
 		catch (const irods::exception& _e) {
@@ -509,19 +545,28 @@ namespace
 			namespace fs = irods::experimental::filesystem;
 
 			// we now accept object id or path here, so pep_api_rm_coll_post can purge
-			std::string object_id{fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path};
+			const auto object_id = fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path;
 
 			//elasticlient::Client client{config->hosts_};
-			const auto response = send_http_request(config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
+			const auto response = send_http_request(
+				config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
 
 			if (!response.has_value()) {
-				rodsLog(LOG_ERROR, fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
+				rodsLog(LOG_ERROR, "%s: No response from elaticsearch host.", __func__);
 			}
 
 			switch (response->result_int()) {
 				// either the index has been deleted, or the AVU was cleared unexpectedly
 				case 404:
-					rodsLog(LOG_NOTICE, fmt::format("received HTTP status code of 404: no index entry for AVU ({}, {}, {}) on object [{}] in index [{}]", _attribute, _value, _unit, _object_path, _index_name).c_str());
+					rodsLog(LOG_NOTICE,
+					        fmt::format("received HTTP status code of 404: no index entry for AVU ({}, {}, {}) on "
+					                    "object [{}] in index [{}]",
+					                    _attribute,
+					                    _value,
+					                    _unit,
+					                    _object_path,
+					                    _index_name)
+					            .c_str());
 					break;
 				// routinely expected return codes ( not logged ):
 				case 200:
@@ -531,7 +576,12 @@ namespace
 				default:
 					THROW(SYS_INTERNAL_ERR,
 					      fmt::format("failed to index metadata [{}] [{}] [{}] for [{}] code [{}] message [{}]",
-					          _attribute, _value, _unit, _object_path, response->result_int(), response->body()));
+					                  _attribute,
+					                  _value,
+					                  _unit,
+					                  _object_path,
+					                  response->result_int(),
+					                  response->body()));
 			}
 		}
 		catch (const std::runtime_error& _e) {
@@ -571,7 +621,7 @@ namespace
 	irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
 	{
 		_ret = "irods_policy_recursive_rm_object_by_path" == _rn || object_index_policy == _rn ||
-			   object_purge_policy == _rn || metadata_index_policy == _rn || metadata_purge_policy == _rn;
+		       object_purge_policy == _rn || metadata_index_policy == _rn || metadata_purge_policy == _rn;
 		return SUCCESS();
 	}
 
@@ -585,9 +635,9 @@ namespace
 	}
 
 	irods::error exec_rule(irods::default_re_ctx&,
-						   const std::string& _rn,
-						   std::list<boost::any>& _args,
-						   irods::callback _eff_hdlr)
+	                       const std::string& _rn,
+	                       std::list<boost::any>& _args,
+	                       irods::callback _eff_hdlr)
 	{
 		ruleExecInfo_t* rei{};
 		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
@@ -641,8 +691,10 @@ namespace
 
 				json obj_meta = nlohmann::json::parse(obj_meta_str);
 
-				if (_rn == metadata_purge_policy && attribute.empty()) { //  purge with AVU by name?
-					invoke_purge_event_metadata( //  delete the indexed entry
+				// purge with AVU by name?
+				if (_rn == metadata_purge_policy && attribute.empty()) {
+					// delete the indexed entry
+					invoke_purge_event_metadata(
 						rei,
 						object_path,
 						attribute,
@@ -651,7 +703,8 @@ namespace
 						index_name);
 				}
 				else {
-					invoke_indexing_event_metadata( // update the indexed entry
+					// update the indexed entry
+					invoke_indexing_event_metadata(
 						rei,
 						object_path,
 						attribute,
@@ -680,13 +733,15 @@ namespace
 				try {
 					if (recurse_info["is_collection"].get<bool>()) {
 						JsubObject =
-							json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}.dump();
+							json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}
+								.dump();
 					}
 				}
 				catch (const std::domain_error& e) {
 					// TODO What is this about? Why std::domain_error?
 					return ERROR(
-						-1, fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}", e.what()));
+						-1,
+						fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}", e.what()));
 				}
 
 				try {
@@ -696,22 +751,27 @@ namespace
 								continue;
 							}
 
-							const auto response = send_http_request(config->hosts_[0], http::verb::post, fmt::format("{}/_delete_by_query", index_name), json_out);
+							const auto response = send_http_request(config->hosts_[0],
+							                                        http::verb::post,
+							                                        fmt::format("{}/_delete_by_query", index_name),
+							                                        json_out);
 
 							if (!response.has_value()) {
-								rodsLog(LOG_ERROR, fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
+								rodsLog(LOG_ERROR,
+								        fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
 								continue;
 							}
 
 							if (response->result_int() != 200) {
 								rodsLog(LOG_WARNING,
-										   fmt::format("_delete_by_query - response code not 200"
-													   "\n\t- for path [{}]"
-													   "\n\t- escaped as [{}]"
-													   "\n\t- json request body is [{}]",
-													   the_path,
-													   escaped_path,
-													   json_out).c_str());
+								        fmt::format("_delete_by_query - response code not 200"
+								                    "\n\t- for path [{}]"
+								                    "\n\t- escaped as [{}]"
+								                    "\n\t- json request body is [{}]",
+								                    the_path,
+								                    escaped_path,
+								                    json_out)
+								            .c_str());
 							}
 						}
 					}
@@ -741,10 +801,10 @@ namespace
 	} // exec_rule
 
 	irods::error exec_rule_text(irods::default_re_ctx&,
-								const std::string&,
-								msParamArray_t*,
-								const std::string&,
-								irods::callback)
+	                            const std::string&,
+	                            msParamArray_t*,
+	                            const std::string&,
+	                            irods::callback)
 	{
 		return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_text is not supported");
 	} // exec_rule_text
