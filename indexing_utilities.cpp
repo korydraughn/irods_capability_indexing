@@ -423,6 +423,7 @@ namespace irods::indexing
 	                                            const std::string& _units,
 	                                            const std::string& opt_id)
 	{
+		// "opt_id" is non-empty if an ID for the deleted object or collection is needed in the task.
 		schedule_policy_events_given_object_path(
 			irods::indexing::operation_type::purge,
 			irods::indexing::index_type::metadata,
@@ -432,7 +433,7 @@ namespace irods::indexing
 			_attribute,
 			_value,
 			_units,
-			opt_id); // non-empty if an ID for the deleted object or collection is needed in the task
+			opt_id);
 	} // schedule_metadata_purge_event
 
 	// - Given an object path (data object or collection) and an operation type,

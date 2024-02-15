@@ -348,13 +348,17 @@ namespace
 				if (chunk_counter == config->bulk_count_) {
 					chunk_counter = 0;
 
-					const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
+					const auto res =
+						send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
 
 					if (!res.has_value()) {
 						rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
 					}
 					else {
-						rodsLog(LOG_ERROR, "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]", __func__, res->result_int());
+						rodsLog(LOG_ERROR,
+						        "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]",
+						        __func__,
+						        res->result_int());
 					}
 
 					ss.str("");
@@ -371,7 +375,10 @@ namespace
 					rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
 				}
 				else {
-					rodsLog(LOG_ERROR, "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]", __func__, res->result_int());
+					rodsLog(LOG_ERROR,
+					        "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]",
+					        __func__,
+					        res->result_int());
 				}
 			}
 		}
@@ -545,7 +552,8 @@ namespace
 			namespace fs = irods::experimental::filesystem;
 
 			// we now accept object id or path here, so pep_api_rm_coll_post can purge
-			const auto object_id = fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path;
+			const auto object_id =
+				fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path;
 
 			//elasticlient::Client client{config->hosts_};
 			const auto response = send_http_request(
@@ -694,24 +702,11 @@ namespace
 				// purge with AVU by name?
 				if (_rn == metadata_purge_policy && attribute.empty()) {
 					// delete the indexed entry
-					invoke_purge_event_metadata(
-						rei,
-						object_path,
-						attribute,
-						value,
-						unit,
-						index_name);
+					invoke_purge_event_metadata(rei, object_path, attribute, value, unit, index_name);
 				}
 				else {
 					// update the indexed entry
-					invoke_indexing_event_metadata(
-						rei,
-						object_path,
-						attribute,
-						value,
-						unit,
-						index_name,
-						obj_meta);
+					invoke_indexing_event_metadata(rei, object_path, attribute, value, unit, index_name, obj_meta);
 				}
 			}
 			else if (_rn == "irods_policy_recursive_rm_object_by_path") {
