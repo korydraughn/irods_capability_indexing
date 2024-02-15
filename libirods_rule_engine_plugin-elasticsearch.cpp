@@ -338,19 +338,18 @@ namespace
 					{"data", std::string_view(buffer.data(), in.gcount())}
 				}.dump(indent, indent_char, ensure_ascii, json::error_handler_t::ignore) << '\n';
 
-				// TODO Send bulk request if chunk counter has reached bulk limit.
-				// Clear the stringstream if the request is sent.
+				// Send bulk request if chunk counter has reached bulk limit.
 				if (chunk_counter == config->bulk_count_) {
 					chunk_counter = 0;
-					ss.str("");
 					const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str()); // TODO C++20 supports .view(), but clang 13 doesn't appear to implement it :-(
 					(void) res;
 					// TODO Check response.
+					ss.str("");
 				}
 			}
 
 			if (chunk_counter > 0) {
-				// TODO Elasticsearch limits the maximum size of a HTTP request to 100mb.
+				// Elasticsearch limits the maximum size of a HTTP request to 100mb.
 				// See https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html.
 				const auto res = send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
 				(void) res;
