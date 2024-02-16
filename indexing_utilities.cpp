@@ -221,7 +221,6 @@ namespace irods::indexing
 	// - Starting at _collection_name , recurse over every sub-element of the tree
 	// - (including data objects and collections and starting with the root).
 	// - Call schedule_policy_event_for_object for every object or collection
-	// -
 	void indexer::schedule_policy_events_for_collection(const std::string& _operation_type,
 	                                                    const std::string& _collection_name,
 	                                                    const std::string& _user_name,
@@ -438,7 +437,6 @@ namespace irods::indexing
 	// - Given an object path (data object or collection) and an operation type,
 	// - ascend collection hierarchy to find the indices for which policy events
 	// - must be scheduled on the given object path
-	// -
 	void indexer::schedule_policy_events_given_object_path(const std::string& _operation_type,
 	                                                       const std::string& _index_type,
 	                                                       const std::string& _object_path,
