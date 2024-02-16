@@ -1,48 +1,40 @@
-// =-=-=-=-=-=-=-
-// irods includes
-#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
-#include <irods/irods_query.hpp>
-#include <irods/irods_re_plugin.hpp>
-#include <irods/irods_re_ruleexistshelper.hpp>
-#include <irods/irods_hierarchy_parser.hpp>
-#include <irods/irods_resource_backport.hpp>
-#include <irods/rsModAVUMetadata.hpp>
-#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
-
-#include <irods/filesystem.hpp>
-
-#include <irods/irods_log.hpp>
-
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
 
-#undef LIST
+#include <irods/irods_hierarchy_parser.hpp>
+#include <irods/irods_log.hpp>
+#include <irods/irods_re_plugin.hpp>
+#include <irods/irods_re_ruleexistshelper.hpp>
+#include <irods/irods_resource_backport.hpp>
+#include <irods/objDesc.hpp>
+#include <irods/rsModAVUMetadata.hpp>
 
-// =-=-=-=-=-=-=-
-// stl includes
-#include <iostream>
-#include <sstream>
-#include <set>
-#include <vector>
-#include <tuple>
-#include <map>
-#include <string>
-#include <fmt/format.h>
+#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#include <irods/filesystem.hpp>
 
-#include <iterator>
-#include <algorithm>
-#include <typeinfo>
+#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#include <irods/irods_query.hpp>
 
-// =-=-=-=-=-=-=-
-// boost includes
+#include <boost/algorithm/string.hpp>
 #include <boost/any.hpp>
 #include <boost/exception/all.hpp>
-#include <boost/algorithm/string.hpp>
 #include <boost/optional.hpp>
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include <irods/objDesc.hpp>
+#undef LIST
+
+#include <algorithm>
+#include <iostream>
+#include <iterator>
+#include <map>
+#include <set>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <typeinfo>
+#include <vector>
 
 using namespace std::string_literals;
 
@@ -55,7 +47,6 @@ int _delayExec(const char* inActionCall,
 
 namespace
 {
-
 	// For handling of atomic metadata ops
 
 	using metadata_tuple = std::tuple<std::string, std::string, std::string>;
@@ -539,7 +530,6 @@ namespace
 		args.push_back(boost::any(_index_name));
 		args.push_back(boost::any(_index_type));
 		irods::indexing::invoke_policy(_rei, policy_name, args);
-
 	} // apply_object_policy
 
 	void apply_specific_policy(ruleExecInfo_t* _rei,
@@ -556,7 +546,6 @@ namespace
 		args.push_back(boost::any(_index_name));
 		args.push_back(boost::any(_index_type));
 		irods::indexing::invoke_policy(_rei, _policy_name, args);
-
 	} // apply_specific_policy
 
 	/***********/
@@ -717,7 +706,6 @@ namespace
 		obj["url"] = fmt::format(fmt::runtime(config->url_template), _obj_path);
 		obj["mimeType"] = (is_collection ? "" : get_default_mime_type(fileName));
 		return obj;
-
 	} // get_system_metadata
 
 	void apply_metadata_policy(ruleExecInfo_t* _rei,
@@ -745,308 +733,305 @@ namespace
 		args.push_back(boost::any(get_system_metadata(_rei, _object_path).dump()));
 
 		irods::indexing::invoke_policy(_rei, policy_name, args);
-
 	} // apply_metadata_policy
 
-} // namespace
+	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
+	{
+		RuleExistsHelper::Instance()->registerRuleRegex("pep_api_.*");
+		config = std::make_unique<irods::indexing::configuration>(_instance_name);
+		rodsLog(LOG_DEBUG, "value of minimum_delay_time: %d", config->minimum_delay_time);
+		rodsLog(LOG_DEBUG, "value of maximum_delay_time: %d", config->maximum_delay_time);
+		rodsLog(LOG_DEBUG, "value of job_limit_per_collection_indexing_operation: %d", config->job_limit);
+		return SUCCESS();
+	} // start
 
-irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
-{
-	RuleExistsHelper::Instance()->registerRuleRegex("pep_api_.*");
-	config = std::make_unique<irods::indexing::configuration>(_instance_name);
-	rodsLog(LOG_DEBUG, "value of minimum_delay_time: %d", config->minimum_delay_time);
-	rodsLog(LOG_DEBUG, "value of maximum_delay_time: %d", config->maximum_delay_time);
-	rodsLog(LOG_DEBUG, "value of job_limit_per_collection_indexing_operation: %d", config->job_limit);
-	return SUCCESS();
-} // start
+	irods::error stop(irods::default_re_ctx&, const std::string&)
+	{
+		return SUCCESS();
+	} // stop
 
-irods::error stop(irods::default_re_ctx&, const std::string&)
-{
-	return SUCCESS();
-} // stop
+	irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
+	{
+		const std::set<std::string> rules{
+			"pep_api_atomic_apply_metadata_operations_pre",
+			"pep_api_atomic_apply_metadata_operations_post",
+			"pep_api_data_obj_open_post",
+			"pep_api_data_obj_create_post",
+			"pep_api_data_obj_repl_post",
+			"pep_api_data_obj_unlink_pre",
+			"pep_api_data_obj_unlink_post",
+			"pep_api_mod_avu_metadata_pre",
+			"pep_api_mod_avu_metadata_post",
+			"pep_api_data_obj_close_post",
+			"pep_api_data_obj_put_post",
+			"pep_api_phy_path_reg_post",
+			"pep_api_rm_coll_pre",
+			"pep_api_rm_coll_post",
+		};
+		_ret = rules.find(_rn) != rules.end();
 
-irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
-{
-	const std::set<std::string> rules{
-		"pep_api_atomic_apply_metadata_operations_pre",
-		"pep_api_atomic_apply_metadata_operations_post",
-		"pep_api_data_obj_open_post",
-		"pep_api_data_obj_create_post",
-		"pep_api_data_obj_repl_post",
-		"pep_api_data_obj_unlink_pre",
-		"pep_api_data_obj_unlink_post",
-		"pep_api_mod_avu_metadata_pre",
-		"pep_api_mod_avu_metadata_post",
-		"pep_api_data_obj_close_post",
-		"pep_api_data_obj_put_post",
-		"pep_api_phy_path_reg_post",
-		"pep_api_rm_coll_pre",
-		"pep_api_rm_coll_post",
-	};
-	_ret = rules.find(_rn) != rules.end();
+		return SUCCESS();
+	} // rule_exists
 
-	return SUCCESS();
-} // rule_exists
+	irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>&)
+	{
+		return SUCCESS();
+	} // list_rules
 
-irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>&)
-{
-	return SUCCESS();
-} // list_rules
-
-irods::error exec_rule(irods::default_re_ctx&,
-                       const std::string& _rn,
-                       std::list<boost::any>& _args,
-                       irods::callback _eff_hdlr)
-{
-	ruleExecInfo_t* rei{};
-	const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
-	if (!err.ok()) {
-		return err;
-	}
-	try {
-		apply_indexing_policy(_rn, rei, _args);
-	}
-	catch (const std::invalid_argument& _e) {
-		irods::indexing::exception_to_rerror(SYS_NOT_SUPPORTED, _e.what(), rei->rsComm->rError);
-		return ERROR(SYS_NOT_SUPPORTED, _e.what());
-	}
-	catch (const std::domain_error& _e) {
-		irods::indexing::exception_to_rerror(INVALID_ANY_CAST, _e.what(), rei->rsComm->rError);
-		return ERROR(SYS_NOT_SUPPORTED, _e.what());
-	}
-	catch (const irods::exception& _e) {
-		irods::indexing::exception_to_rerror(_e, rei->rsComm->rError);
-		return irods::error(_e);
-	}
-
-	return CODE(RULE_ENGINE_CONTINUE);
-
-} // exec_rule
-
-irods::error exec_rule_text(irods::default_re_ctx&,
-                            const std::string& _rule_text,
-                            msParamArray_t* _ms_params,
-                            const std::string& _out_desc,
-                            irods::callback _eff_hdlr)
-{
-	using json = nlohmann::json;
-
-	try {
-		// skip the first line: @external
-		std::string rule_text{_rule_text};
-		if (_rule_text.find("@external") != std::string::npos) {
-			rule_text = _rule_text.substr(10);
+	irods::error exec_rule(irods::default_re_ctx&,
+						   const std::string& _rn,
+						   std::list<boost::any>& _args,
+						   irods::callback _eff_hdlr)
+	{
+		ruleExecInfo_t* rei{};
+		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
+		if (!err.ok()) {
+			return err;
 		}
-		const auto rule_obj = json::parse(rule_text);
-		const std::string& rule_engine_instance_name = rule_obj["rule-engine-instance-name"];
-		// if the rule text does not have our instance name, fail
-		if (config->instance_name != rule_engine_instance_name) {
-			return ERROR(SYS_NOT_SUPPORTED, "instance name not found");
+		try {
+			apply_indexing_policy(_rn, rei, _args);
 		}
-#if 0
-        // catalog / index drift correction
-        if(irods::indexing::schedule::indexing ==
-           rule_obj["rule-engine-operation"]) {
-            ruleExecInfo_t* rei{};
-            const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
-            if(!err.ok()) {
-                return err;
-            }
-
-            const std::string& params = rule_obj["delay-parameters"];
-
-            json delay_obj;
-            delay_obj["rule-engine-operation"] = irods::indexing::policy::indexing;
-
-            irods::indexing::indexer idx{rei, config->instance_name};
-            idx.schedule_indexing_policy(
-                delay_obj.dump(),
-                params);
-        }
-        else
-#endif
-		{
-			return ERROR(SYS_NOT_SUPPORTED, "supported rule name not found");
+		catch (const std::invalid_argument& _e) {
+			irods::indexing::exception_to_rerror(SYS_NOT_SUPPORTED, _e.what(), rei->rsComm->rError);
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
 		}
-	}
-	catch (const std::invalid_argument& _e) {
-		std::string msg{"Rule text is not valid JSON -- "};
-		msg += _e.what();
-		return ERROR(SYS_NOT_SUPPORTED, msg);
-	}
-	catch (const std::domain_error& _e) {
-		std::string msg{"Rule text is not valid JSON -- "};
-		msg += _e.what();
-		return ERROR(SYS_NOT_SUPPORTED, msg);
-	}
-	catch (const irods::exception& _e) {
-		return ERROR(_e.code(), _e.what());
-	}
-
-	return SUCCESS();
-} // exec_rule_text
-
-irods::error exec_rule_expression(irods::default_re_ctx&,
-                                  const std::string& _rule_text,
-                                  msParamArray_t* _ms_params,
-                                  irods::callback _eff_hdlr)
-{
-	using json = nlohmann::json;
-	ruleExecInfo_t* rei{};
-	const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
-	if (!err.ok()) {
-		return err;
-	}
-
-	try {
-		const auto rule_obj = json::parse(_rule_text);
-		if (irods::indexing::policy::object::index == rule_obj["rule-engine-operation"]) {
-			try {
-				// proxy for provided user name
-				const std::string& user_name = rule_obj["user-name"];
-				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
-
-				// - implement (full-text?) indexing on an individual object
-				// -     as a delayed task.
-				// -
-				apply_object_policy(rei,
-				                    irods::indexing::policy::object::index,
-				                    rule_obj["object-path"],
-				                    rule_obj["source-resource"],
-				                    rule_obj["indexer"],
-				                    rule_obj["index-name"],
-				                    rule_obj["index-type"]);
-			}
-			catch (const irods::exception& _e) {
-				printErrorStack(&rei->rsComm->rError);
-				return ERROR(_e.code(), _e.what());
-			}
+		catch (const std::domain_error& _e) {
+			irods::indexing::exception_to_rerror(INVALID_ANY_CAST, _e.what(), rei->rsComm->rError);
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
 		}
-		else if (irods::indexing::policy::object::purge == rule_obj["rule-engine-operation"]) {
-			try {
-				// proxy for provided user name
-				const std::string& user_name = rule_obj["user-name"];
-				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+		catch (const irods::exception& _e) {
+			irods::indexing::exception_to_rerror(_e, rei->rsComm->rError);
+			return irods::error(_e);
+		}
 
-				// - implement index purge on an individual object
-				// -    as a delayed task.
-				// -
-				apply_object_policy(rei,
-				                    irods::indexing::policy::object::purge,
-				                    rule_obj["object-path"],
-				                    rule_obj["source-resource"],
-				                    rule_obj["indexer"],
-				                    rule_obj["index-name"],
-				                    rule_obj["index-type"]);
-			}
-			catch (const irods::exception& _e) {
-				printErrorStack(&rei->rsComm->rError);
-				return ERROR(_e.code(), _e.what());
-			}
-		}
-		else if (irods::indexing::policy::collection::index == rule_obj["rule-engine-operation"]) {
-			// - launch delayed task to handle indexing events under a collection
-			// -   ( example : a new indexing AVU was placed on the collection )
-			// -
-			irods::indexing::indexer idx{rei, config->instance_name};
-			idx.schedule_policy_events_for_collection(irods::indexing::operation_type::index,
-			                                          rule_obj["collection-name"],
-			                                          rule_obj["user-name"],
-			                                          rule_obj["indexer"],
-			                                          rule_obj["index-name"],
-			                                          rule_obj["index-type"]);
-		}
-		else if (irods::indexing::policy::collection::purge == rule_obj["rule-engine-operation"]) {
-			// - launch delayed task to handle indexing events under a collection
-			// -   ( example : an indexing AVU was removed from the collection )
-			// -
-			irods::indexing::indexer idx{rei, config->instance_name};
-			idx.schedule_policy_events_for_collection(irods::indexing::operation_type::purge,
-			                                          rule_obj["collection-name"],
-			                                          rule_obj["user-name"],
-			                                          rule_obj["indexer"],
-			                                          rule_obj["index-name"],
-			                                          rule_obj["index-type"]);
-		}
-		else if (irods::indexing::policy::metadata::index == rule_obj["rule-engine-operation"]) {
-			try {
-				// proxy for provided user name
-				const std::string& user_name = rule_obj["user-name"];
-				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
-
-				apply_metadata_policy(rei,
-				                      irods::indexing::policy::metadata::index,
-				                      rule_obj["object-path"],
-				                      rule_obj["indexer"],
-				                      rule_obj["index-name"],
-				                      rule_obj["attribute"],
-				                      rule_obj["value"],
-				                      rule_obj["units"]);
-			}
-			catch (const irods::exception& _e) {
-				printErrorStack(&rei->rsComm->rError);
-				return ERROR(_e.code(), _e.what());
-			}
-		}
-		else if (irods::indexing::policy::metadata::purge == rule_obj["rule-engine-operation"]) {
-			try {
-				// proxy for provided user name
-				const std::string& user_name = rule_obj["user-name"];
-				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
-
-				apply_metadata_policy(rei,
-				                      irods::indexing::policy::metadata::purge,
-				                      rule_obj["object-path"],
-				                      rule_obj["indexer"],
-				                      rule_obj["index-name"],
-				                      rule_obj["attribute"],
-				                      rule_obj["value"],
-				                      rule_obj["units"]);
-			}
-			catch (const irods::exception& _e) {
-				printErrorStack(&rei->rsComm->rError);
-				return ERROR(_e.code(), _e.what());
-			}
-		}
-		else if ("irods_policy_recursive_rm_object_by_path" == rule_obj["rule-engine-operation"]) {
-			const std::string& user_name = rule_obj["user-name"];
-			rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
-
-			apply_specific_policy(rei,
-			                      "irods_policy_recursive_rm_object_by_path",
-			                      rule_obj["object-path"],
-			                      rule_obj["source-resource"],
-			                      rule_obj["indexer"],
-			                      rule_obj["index-name"],
-			                      rule_obj["index-type"]);
-		}
-		else {
-			printErrorStack(&rei->rsComm->rError);
-			return ERROR(SYS_NOT_SUPPORTED, "supported rule name not found");
-		}
-	}
-	catch (const json::parse_error& _e) {
-		rodsLog(LOG_ERROR,
-		        "Exception (%s). Could not parse JSON rule text @ FILE %s LINE %d FUNCTION %s ",
-		        _e.what(),
-		        __FILE__,
-		        __LINE__,
-		        __FUNCTION__);
 		return CODE(RULE_ENGINE_CONTINUE);
-	}
-	catch (const std::invalid_argument& _e) {
-		return ERROR(SYS_NOT_SUPPORTED, _e.what());
-	}
-	catch (const std::domain_error& _e) {
-		return ERROR(SYS_NOT_SUPPORTED, _e.what());
-	}
-	catch (const irods::exception& _e) {
-		return ERROR(_e.code(), _e.what());
-	}
 
-	return SUCCESS();
+	} // exec_rule
 
-} // exec_rule_expression
+	irods::error exec_rule_text(irods::default_re_ctx&,
+								const std::string& _rule_text,
+								msParamArray_t* _ms_params,
+								const std::string& _out_desc,
+								irods::callback _eff_hdlr)
+	{
+		using json = nlohmann::json;
+
+		try {
+			// skip the first line: @external
+			std::string rule_text{_rule_text};
+			if (_rule_text.find("@external") != std::string::npos) {
+				rule_text = _rule_text.substr(10);
+			}
+			const auto rule_obj = json::parse(rule_text);
+			const std::string& rule_engine_instance_name = rule_obj["rule-engine-instance-name"];
+			// if the rule text does not have our instance name, fail
+			if (config->instance_name != rule_engine_instance_name) {
+				return ERROR(SYS_NOT_SUPPORTED, "instance name not found");
+			}
+#if 0
+			// catalog / index drift correction
+			if(irods::indexing::schedule::indexing ==
+			   rule_obj["rule-engine-operation"]) {
+				ruleExecInfo_t* rei{};
+				const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
+				if(!err.ok()) {
+					return err;
+				}
+
+				const std::string& params = rule_obj["delay-parameters"];
+
+				json delay_obj;
+				delay_obj["rule-engine-operation"] = irods::indexing::policy::indexing;
+
+				irods::indexing::indexer idx{rei, config->instance_name};
+				idx.schedule_indexing_policy(
+					delay_obj.dump(),
+					params);
+			}
+			else
+#endif
+			{
+				return ERROR(SYS_NOT_SUPPORTED, "supported rule name not found");
+			}
+		}
+		catch (const std::invalid_argument& _e) {
+			std::string msg{"Rule text is not valid JSON -- "};
+			msg += _e.what();
+			return ERROR(SYS_NOT_SUPPORTED, msg);
+		}
+		catch (const std::domain_error& _e) {
+			std::string msg{"Rule text is not valid JSON -- "};
+			msg += _e.what();
+			return ERROR(SYS_NOT_SUPPORTED, msg);
+		}
+		catch (const irods::exception& _e) {
+			return ERROR(_e.code(), _e.what());
+		}
+
+		return SUCCESS();
+	} // exec_rule_text
+
+	irods::error exec_rule_expression(irods::default_re_ctx&,
+									  const std::string& _rule_text,
+									  msParamArray_t* _ms_params,
+									  irods::callback _eff_hdlr)
+	{
+		using json = nlohmann::json;
+		ruleExecInfo_t* rei{};
+		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
+		if (!err.ok()) {
+			return err;
+		}
+
+		try {
+			const auto rule_obj = json::parse(_rule_text);
+			if (irods::indexing::policy::object::index == rule_obj["rule-engine-operation"]) {
+				try {
+					// proxy for provided user name
+					const std::string& user_name = rule_obj["user-name"];
+					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+
+					// - implement (full-text?) indexing on an individual object
+					// -     as a delayed task.
+					// -
+					apply_object_policy(rei,
+										irods::indexing::policy::object::index,
+										rule_obj["object-path"],
+										rule_obj["source-resource"],
+										rule_obj["indexer"],
+										rule_obj["index-name"],
+										rule_obj["index-type"]);
+				}
+				catch (const irods::exception& _e) {
+					printErrorStack(&rei->rsComm->rError);
+					return ERROR(_e.code(), _e.what());
+				}
+			}
+			else if (irods::indexing::policy::object::purge == rule_obj["rule-engine-operation"]) {
+				try {
+					// proxy for provided user name
+					const std::string& user_name = rule_obj["user-name"];
+					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+
+					// - implement index purge on an individual object
+					// -    as a delayed task.
+					// -
+					apply_object_policy(rei,
+										irods::indexing::policy::object::purge,
+										rule_obj["object-path"],
+										rule_obj["source-resource"],
+										rule_obj["indexer"],
+										rule_obj["index-name"],
+										rule_obj["index-type"]);
+				}
+				catch (const irods::exception& _e) {
+					printErrorStack(&rei->rsComm->rError);
+					return ERROR(_e.code(), _e.what());
+				}
+			}
+			else if (irods::indexing::policy::collection::index == rule_obj["rule-engine-operation"]) {
+				// - launch delayed task to handle indexing events under a collection
+				// -   ( example : a new indexing AVU was placed on the collection )
+				// -
+				irods::indexing::indexer idx{rei, config->instance_name};
+				idx.schedule_policy_events_for_collection(irods::indexing::operation_type::index,
+														  rule_obj["collection-name"],
+														  rule_obj["user-name"],
+														  rule_obj["indexer"],
+														  rule_obj["index-name"],
+														  rule_obj["index-type"]);
+			}
+			else if (irods::indexing::policy::collection::purge == rule_obj["rule-engine-operation"]) {
+				// - launch delayed task to handle indexing events under a collection
+				// -   ( example : an indexing AVU was removed from the collection )
+				// -
+				irods::indexing::indexer idx{rei, config->instance_name};
+				idx.schedule_policy_events_for_collection(irods::indexing::operation_type::purge,
+														  rule_obj["collection-name"],
+														  rule_obj["user-name"],
+														  rule_obj["indexer"],
+														  rule_obj["index-name"],
+														  rule_obj["index-type"]);
+			}
+			else if (irods::indexing::policy::metadata::index == rule_obj["rule-engine-operation"]) {
+				try {
+					// proxy for provided user name
+					const std::string& user_name = rule_obj["user-name"];
+					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+
+					apply_metadata_policy(rei,
+										  irods::indexing::policy::metadata::index,
+										  rule_obj["object-path"],
+										  rule_obj["indexer"],
+										  rule_obj["index-name"],
+										  rule_obj["attribute"],
+										  rule_obj["value"],
+										  rule_obj["units"]);
+				}
+				catch (const irods::exception& _e) {
+					printErrorStack(&rei->rsComm->rError);
+					return ERROR(_e.code(), _e.what());
+				}
+			}
+			else if (irods::indexing::policy::metadata::purge == rule_obj["rule-engine-operation"]) {
+				try {
+					// proxy for provided user name
+					const std::string& user_name = rule_obj["user-name"];
+					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+
+					apply_metadata_policy(rei,
+										  irods::indexing::policy::metadata::purge,
+										  rule_obj["object-path"],
+										  rule_obj["indexer"],
+										  rule_obj["index-name"],
+										  rule_obj["attribute"],
+										  rule_obj["value"],
+										  rule_obj["units"]);
+				}
+				catch (const irods::exception& _e) {
+					printErrorStack(&rei->rsComm->rError);
+					return ERROR(_e.code(), _e.what());
+				}
+			}
+			else if ("irods_policy_recursive_rm_object_by_path" == rule_obj["rule-engine-operation"]) {
+				const std::string& user_name = rule_obj["user-name"];
+				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+
+				apply_specific_policy(rei,
+									  "irods_policy_recursive_rm_object_by_path",
+									  rule_obj["object-path"],
+									  rule_obj["source-resource"],
+									  rule_obj["indexer"],
+									  rule_obj["index-name"],
+									  rule_obj["index-type"]);
+			}
+			else {
+				printErrorStack(&rei->rsComm->rError);
+				return ERROR(SYS_NOT_SUPPORTED, "supported rule name not found");
+			}
+		}
+		catch (const json::parse_error& _e) {
+			rodsLog(LOG_ERROR,
+					"Exception (%s). Could not parse JSON rule text @ FILE %s LINE %d FUNCTION %s ",
+					_e.what(),
+					__FILE__,
+					__LINE__,
+					__FUNCTION__);
+			return CODE(RULE_ENGINE_CONTINUE);
+		}
+		catch (const std::invalid_argument& _e) {
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
+		}
+		catch (const std::domain_error& _e) {
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
+		}
+		catch (const irods::exception& _e) {
+			return ERROR(_e.code(), _e.what());
+		}
+
+		return SUCCESS();
+	} // exec_rule_expression
+} // namespace
 
 extern "C" irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(const std::string& _inst_name,
                                                                                const std::string& _context)
