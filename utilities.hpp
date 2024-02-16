@@ -1,12 +1,12 @@
-#ifndef IRODS_UTILITIES_HPP
-#define IRODS_UTILITIES_HPP
+#ifndef IRODS_CAPABILITY_INDEXING_UTILITIES_HPP
+#define IRODS_CAPABILITY_INDEXING_UTILITIES_HPP
 
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_exception.hpp>
 #include <irods/rodsError.h>
 
 #include <boost/any.hpp>
-#include <boost/format.hpp>
+#include <fmt/format.h>
 
 #include <list>
 #include <string>
@@ -21,7 +21,7 @@ namespace irods::indexing
 		const auto pos = _indexer_string.find_last_of(indexer_separator);
 		if (std::string::npos == pos) {
 			THROW(SYS_INVALID_INPUT_PARAM,
-			      boost::format("[%s] does not include an index separator for collection") % _indexer_string);
+			      fmt::format("[{}] does not include an index separator for collection", _indexer_string));
 		}
 		const auto index_name = _indexer_string.substr(0, pos - (indexer_separator.size() - 1));
 		const auto index_type = _indexer_string.substr(pos + 1);
@@ -35,4 +35,4 @@ namespace irods::indexing
 	void invoke_policy(ruleExecInfo_t* _rei, const std::string& _action, std::list<boost::any> _args);
 } // namespace irods::indexing
 
-#endif // IRODS_UTILITIES_HPP
+#endif // IRODS_CAPABILITY_INDEXING_UTILITIES_HPP

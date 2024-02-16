@@ -1,5 +1,5 @@
-#ifndef IRODS_INDEXING_UTILITIES_HPP
-#define IRODS_INDEXING_UTILITIES_HPP
+#ifndef IRODS_CAPABILITY_INDEXING_INDEXING_UTILITIES_HPP
+#define IRODS_CAPABILITY_INDEXING_INDEXING_UTILITIES_HPP
 
 #include "configuration.hpp"
 
@@ -117,4 +117,4 @@ namespace irods::indexing
 	}; // class indexer
 } // namespace irods::indexing
 
-#endif // IRODS_INDEXING_UTILITIES_HPP
+#endif // IRODS_CAPABILITY_INDEXING_INDEXING_UTILITIES_HPP

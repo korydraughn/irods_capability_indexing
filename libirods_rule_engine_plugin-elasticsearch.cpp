@@ -197,11 +197,6 @@ namespace
 		irods::indexing::invoke_policy(_rei, policy_name, args);
 	} // apply_document_type_policy
 
-	//void log_fcn(elasticlient::LogLevel, const std::string& _msg)
-	//{
-	//rodsLog(LOG_DEBUG, "ELASTICLIENT :: [%s]", _msg.c_str());
-	//} // log_fcn
-
 	std::string generate_id()
 	{
 		using namespace boost::archive::iterators;
@@ -560,7 +555,9 @@ namespace
 				config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
 
 			if (!response.has_value()) {
-				rodsLog(LOG_ERROR, "%s: No response from elaticsearch host.", __func__);
+				auto msg = fmt::format("{}: No response from elaticsearch host.", __func__);
+				rodsLog(LOG_ERROR, msg.c_str());
+				THROW(SYS_INTERNAL_ERR, std::move(msg));
 			}
 
 			switch (response->result_int()) {
@@ -615,9 +612,6 @@ namespace
 		metadata_purge_policy =
 			irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::purge, "elasticsearch");
 
-		if (getRodsLogLevel() > LOG_NOTICE) {
-			//elasticlient::setLogFunction(log_fcn);
-		}
 		return SUCCESS();
 	}
 

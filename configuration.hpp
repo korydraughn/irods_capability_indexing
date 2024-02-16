@@ -1,5 +1,5 @@
-#ifndef IRODS_CONFIGURATION_HPP
-#define IRODS_CONFIGURATION_HPP
+#ifndef IRODS_CAPABILITY_INDEXING_CONFIGURATION_HPP
+#define IRODS_CAPABILITY_INDEXING_CONFIGURATION_HPP
 
 #include <irods/irods_log.hpp>
 #include <irods/rodsLog.h>
@@ -252,4 +252,4 @@ namespace irods::indexing
 	}; // struct configuration
 } // namespace irods::indexing
 
-#endif // IRODS_CONFIGURATION_HPP
+#endif // IRODS_CAPABILITY_INDEXING_CONFIGURATION_HPP

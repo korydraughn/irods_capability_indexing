@@ -1,5 +1,5 @@
-#ifndef IRODS_CPP_JSON_KW_HPP
-#define IRODS_CPP_JSON_KW_HPP
+#ifndef IRODS_CAPABILITY_INDEXING_CPP_JSON_KW_HPP
+#define IRODS_CAPABILITY_INDEXING_CPP_JSON_KW_HPP
 
 #include <irods/rodsLog.h>
 
@@ -59,4 +59,4 @@ int main (int argc, char** argv)
  *
  */
 
-#endif // IRODS_CPP_JSON_KW_HPP
+#endif // IRODS_CAPABILITY_INDEXING_CPP_JSON_KW_HPP
