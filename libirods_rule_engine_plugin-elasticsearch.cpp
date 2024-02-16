@@ -51,93 +51,8 @@ namespace
 	namespace beast = boost::beast;
 	namespace http = beast::http;
 
+	using http_response = std::optional<http::response<http::string_body>>;
 	using json = nlohmann::json;
-
-	auto send_http_request(const std::string_view _service_url,
-	                       http::verb _verb,
-	                       const std::string_view _target,
-	                       const std::string_view _body = "") -> std::optional<http::response<http::string_body>>
-	{
-		// TODO These host/port checks should happen at plugin startup.
-		// There's no point paying for these on every http request.
-
-		if (_service_url.empty()) {
-			rodsLog(LOG_ERROR, "%s: Empty service URL.", __func__);
-			return std::nullopt;
-		}
-
-		namespace urls = boost::urls;
-
-		urls::result<urls::url_view> result = urls::parse_uri(_service_url);
-		if (!result) {
-			rodsLog(LOG_ERROR, fmt::format("{}: Could not parse service URL [{}].", __func__, _service_url).c_str());
-			return std::nullopt;
-		}
-
-		namespace net = boost::asio;
-		using tcp = net::ip::tcp;
-
-		try {
-			net::io_context ioc;
-
-			tcp::resolver resolver{ioc};
-			beast::tcp_stream stream{ioc};
-
-			const auto results = resolver.resolve(result->host(), result->port());
-			stream.connect(results);
-
-			http::request<http::string_body> req{_verb, _target, 11};
-			req.set(http::field::host, "localhost");
-			req.set(http::field::user_agent, "iRODS Indexing Plugin/4.3.1");
-			req.set(http::field::content_type, "application/json");
-
-			if (!_body.empty()) {
-				req.body() = _body;
-				{
-					std::stringstream ss;
-					ss << req;
-					const auto s = ss.str();
-					if (s.size() > 256) {
-						rodsLog(LOG_NOTICE,
-						        fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
-						            .c_str());
-					}
-					else {
-						rodsLog(LOG_NOTICE, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
-					}
-				}
-				req.prepare_payload();
-			}
-
-			http::write(stream, req);
-
-			beast::flat_buffer buffer;
-			http::response<http::string_body> res;
-			http::read(stream, buffer, res);
-
-			{
-				std::stringstream ss;
-				ss << res;
-				rodsLog(LOG_NOTICE, fmt::format("{}: elasticsearch response = [{}]", __func__, ss.str()).c_str());
-			}
-
-			beast::error_code ec;
-			stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-
-			// not_connected happens sometimes, so don't bother reporting it.
-			if (ec && ec != beast::errc::not_connected) {
-				throw beast::system_error{ec};
-			}
-
-			return res;
-		}
-		catch (const std::exception& e) {
-			rodsLog(LOG_ERROR, fmt::format("{}: {}", __func__, e.what()).c_str());
-		}
-
-		return std::nullopt;
-	}
-
 	using string_t = std::string;
 
 	struct configuration : irods::indexing::configuration
@@ -182,6 +97,92 @@ namespace
 	std::string object_purge_policy;
 	std::string metadata_index_policy;
 	std::string metadata_purge_policy;
+
+	auto send_http_request(http::verb _verb,
+	                       const std::string_view _target,
+	                       const std::string_view _body = "") -> http_response
+	{
+		// TODO These host/port checks should happen at plugin startup.
+		// There's no point paying for these on every http request.
+
+		for (auto&& host : config->hosts) {
+			if (host.empty()) {
+				rodsLog(LOG_ERROR, "%s: empty service URL.", __func__);
+				continue;
+			}
+
+			namespace urls = boost::urls;
+
+			urls::result<urls::url_view> result = urls::parse_uri(host);
+			if (!result) {
+				rodsLog(LOG_ERROR, fmt::format("{}: could not parse service URL [{}].", __func__, host).c_str());
+				continue;
+			}
+
+			namespace net = boost::asio;
+			using tcp = net::ip::tcp;
+
+			try {
+				net::io_context ioc;
+
+				tcp::resolver resolver{ioc};
+				beast::tcp_stream stream{ioc};
+
+				const auto results = resolver.resolve(result->host(), result->port());
+				stream.connect(results);
+
+				http::request<http::string_body> req{_verb, _target, 11};
+				req.set(http::field::host, boost::asio::ip::host_name());
+				req.set(http::field::user_agent, "iRODS Indexing Plugin/4.3.1");
+				req.set(http::field::content_type, "application/json");
+
+				if (!_body.empty()) {
+					req.body() = _body;
+					{
+						std::stringstream ss;
+						ss << req;
+						const auto s = ss.str();
+						if (s.size() > 256) {
+							rodsLog(LOG_DEBUG,
+									fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
+										.c_str());
+						}
+						else {
+							rodsLog(LOG_DEBUG, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
+						}
+					}
+					req.prepare_payload();
+				}
+
+				http::write(stream, req);
+
+				beast::flat_buffer buffer;
+				http::response<http::string_body> res;
+				http::read(stream, buffer, res);
+
+				{
+					std::stringstream ss;
+					ss << res;
+					rodsLog(LOG_DEBUG, fmt::format("{}: elasticsearch response = [{}]", __func__, ss.str()).c_str());
+				}
+
+				beast::error_code ec;
+				stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+
+				// not_connected happens sometimes, so don't bother reporting it.
+				if (ec && ec != beast::errc::not_connected) {
+					throw beast::system_error{ec};
+				}
+
+				return res;
+			}
+			catch (const std::exception& e) {
+				rodsLog(LOG_ERROR, fmt::format("{}: {}", __func__, e.what()).c_str());
+			}
+		}
+
+		return std::nullopt;
+	} // send_http_request
 
 	std::string generate_id()
 	{
@@ -326,8 +327,7 @@ namespace
 				if (chunk_counter == config->bulk_count_) {
 					chunk_counter = 0;
 
-					const auto res =
-						send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
+					const auto res = send_http_request(http::verb::post, _index_name + "/_bulk", ss.str());
 
 					if (!res.has_value()) {
 						rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
@@ -346,8 +346,7 @@ namespace
 			if (chunk_counter > 0) {
 				// Elasticsearch limits the maximum size of a HTTP request to 100mb.
 				// See https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html.
-				const auto res =
-					send_http_request(config->hosts_[0], http::verb::post, _index_name + "/_bulk", ss.str());
+				const auto res = send_http_request(http::verb::post, _index_name + "/_bulk", ss.str());
 
 				if (!res.has_value()) {
 					rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
@@ -388,11 +387,7 @@ namespace
 			bool done{false};
 
 			while (!done) {
-				//elasticlient::Client client{config->hosts_};
-				const auto response =
-					send_http_request(config->hosts_[0],
-				                      http::verb::delete_,
-				                      fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
+				const auto response = send_http_request(http::verb::delete_, fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
 				++chunk_counter;
 
 				if (!response.has_value()) {
@@ -472,10 +467,7 @@ namespace
 			}
 			obj_meta["metadataEntries"] = *jsonarray;
 
-			//elasticlient::Client client{config->hosts_};
-			//const auto target = fmt::format("{}/_doc/{}?op_type=create", index_name, doc_id);
-			const auto response = send_http_request(
-				config->hosts_[0], http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
+			const auto response = send_http_request(http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
 
 			if (!response.has_value()) {
 				THROW(SYS_INTERNAL_ERR,
@@ -529,9 +521,7 @@ namespace
 			const auto object_id =
 				fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path;
 
-			//elasticlient::Client client{config->hosts_};
-			const auto response = send_http_request(
-				config->hosts_[0], http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
+			const auto response = send_http_request(http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
 
 			if (!response.has_value()) {
 				auto msg = fmt::format("{}: No response from elaticsearch host.", __func__);
@@ -719,8 +709,7 @@ namespace
 								continue;
 							}
 
-							const auto response = send_http_request(config->hosts_[0],
-							                                        http::verb::post,
+							const auto response = send_http_request(http::verb::post,
 							                                        fmt::format("{}/_delete_by_query", index_name),
 							                                        json_out);
 
