@@ -27,12 +27,13 @@ namespace irods::indexing
 		}
 		catch (const nlohmann::json::exception& _e) {
 			rodsLog(LOG_ERROR,
-					   fmt::format("[{}:{}] in [file={}] - json exception occurred [error={}], [instance={}]",
-								   __func__,
-								   __LINE__,
-								   __FILE__,
-								   _e.what(),
-								   _instance_name).c_str());
+			        fmt::format("[{}:{}] in [file={}] - json exception occurred [error={}], [instance={}]",
+			                    __func__,
+			                    __LINE__,
+			                    __FILE__,
+			                    _e.what(),
+			                    _instance_name)
+			            .c_str());
 			THROW(SYS_LIBRARY_ERROR, _e.what());
 		}
 		catch (const std::exception& e) {
@@ -44,6 +45,6 @@ namespace irods::indexing
 		}
 
 		THROW(SYS_INVALID_INPUT_PARAM,
-			  fmt::format("failed to find configuration for indexing plugin [{}]", _instance_name));
+		      fmt::format("failed to find configuration for indexing plugin [{}]", _instance_name));
 	} // get_plugin_specific_configuration
 } // namespace irods::indexing
