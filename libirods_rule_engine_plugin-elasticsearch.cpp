@@ -98,9 +98,8 @@ namespace
 	std::string metadata_index_policy;
 	std::string metadata_purge_policy;
 
-	auto send_http_request(http::verb _verb,
-	                       const std::string_view _target,
-	                       const std::string_view _body = "") -> http_response
+	auto send_http_request(http::verb _verb, const std::string_view _target, const std::string_view _body = "")
+		-> http_response
 	{
 		// TODO These host/port checks should happen at plugin startup.
 		// There's no point paying for these on every http request.
@@ -143,9 +142,10 @@ namespace
 						ss << req;
 						const auto s = ss.str();
 						if (s.size() > 256) {
-							rodsLog(LOG_DEBUG,
-									fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
-										.c_str());
+							rodsLog(
+								LOG_DEBUG,
+								fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
+									.c_str());
 						}
 						else {
 							rodsLog(LOG_DEBUG, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
@@ -387,7 +387,8 @@ namespace
 			bool done{false};
 
 			while (!done) {
-				const auto response = send_http_request(http::verb::delete_, fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
+				const auto response = send_http_request(
+					http::verb::delete_, fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
 				++chunk_counter;
 
 				if (!response.has_value()) {
@@ -467,7 +468,8 @@ namespace
 			}
 			obj_meta["metadataEntries"] = *jsonarray;
 
-			const auto response = send_http_request(http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
+			const auto response =
+				send_http_request(http::verb::put, fmt::format("{}/_doc/{}", _index_name, object_id), obj_meta.dump());
 
 			if (!response.has_value()) {
 				THROW(SYS_INTERNAL_ERR,
@@ -521,7 +523,8 @@ namespace
 			const auto object_id =
 				fs::path{_object_path}.is_absolute() ? get_object_index_id(_rei, _object_path) : _object_path;
 
-			const auto response = send_http_request(http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
+			const auto response =
+				send_http_request(http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
 
 			if (!response.has_value()) {
 				auto msg = fmt::format("{}: No response from elaticsearch host.", __func__);
@@ -709,9 +712,8 @@ namespace
 								continue;
 							}
 
-							const auto response = send_http_request(http::verb::post,
-							                                        fmt::format("{}/_delete_by_query", index_name),
-							                                        json_out);
+							const auto response = send_http_request(
+								http::verb::post, fmt::format("{}/_delete_by_query", index_name), json_out);
 
 							if (!response.has_value()) {
 								rodsLog(LOG_ERROR,
