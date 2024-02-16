@@ -57,33 +57,33 @@ namespace
 
 	struct configuration : irods::indexing::configuration
 	{
-		std::vector<std::string> hosts_;
-		int bulk_count_{10};
-		int read_size_{4194304};
-		std::string es_version_{"7."};
+		std::vector<std::string> hosts;
+		int bulk_count{10};
+		int read_size{4194304};
+		std::string es_version{"7."};
 
 		configuration(const std::string& _instance_name)
 			: irods::indexing::configuration(_instance_name)
 		{
 			try {
 				auto cfg = irods::indexing::get_plugin_specific_configuration(_instance_name);
-				if (cfg.find("hosts") != cfg.end()) {
-					nlohmann::json host_list = cfg.at("hosts");
-					for (auto& i : host_list) {
-						hosts_.push_back(i.get<std::string>());
+
+				if (auto iter = cfg.find("hosts"); iter != cfg.end()) {
+					for (auto& i : *iter) {
+						hosts.push_back(i.get<std::string>());
 					}
 				}
 
-				if (cfg.find("es_version") != cfg.end()) {
-					es_version_ = cfg.at("es_version").get<std::string>();
+				if (auto iter = cfg.find("es_version"); iter != cfg.end()) {
+					es_version = iter->get<std::string>();
 				}
 
-				if (cfg.find("bulk_count") != cfg.end()) {
-					bulk_count_ = cfg.at("bulk_count").get<int>();
+				if (auto iter = cfg.find("bulk_count"); iter != cfg.end()) {
+					bulk_count = iter->get<int>();
 				}
 
-				if (cfg.find("read_size") != cfg.end()) {
-					bulk_count_ = cfg.at("read_size").get<int>();
+				if (auto iter = cfg.find("read_size"); iter != cfg.end()) {
+					bulk_count = iter->get<int>();
 				}
 			}
 			catch (const std::exception& _e) {
@@ -285,12 +285,12 @@ namespace
 	                                     const std::string& _index_name)
 	{
 		try {
-			if (config->bulk_count_ < 0) {
+			if (config->bulk_count < 0) {
 				// TODO Do we protect against this?
 			}
 
 			const std::string object_id = get_object_index_id(_rei, _object_path);
-			std::vector<char> buffer(config->read_size_);
+			std::vector<char> buffer(config->read_size);
 			irods::experimental::io::server::basic_transport<char> xport(*_rei->rsComm);
 			irods::experimental::io::idstream in{xport, _object_path};
 
@@ -324,7 +324,7 @@ namespace
 				// clang-format on
 
 				// Send bulk request if chunk counter has reached bulk limit.
-				if (chunk_counter == config->bulk_count_) {
+				if (chunk_counter == config->bulk_count) {
 					chunk_counter = 0;
 
 					const auto res = send_http_request(http::verb::post, _index_name + "/_bulk", ss.str());

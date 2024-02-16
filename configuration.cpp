@@ -2,7 +2,7 @@
 
 #include "plugin_specific_configuration.hpp"
 
-#include <irods/rodsLog.h> // TODO Replace w/ new logger
+#include <irods/rodsLog.h>
 #include <irods/irods_log.hpp>
 
 #include <fmt/format.h>
