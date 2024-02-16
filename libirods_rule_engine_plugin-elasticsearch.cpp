@@ -183,20 +183,6 @@ namespace
 	std::string metadata_index_policy;
 	std::string metadata_purge_policy;
 
-	void apply_document_type_policy(ruleExecInfo_t* _rei,
-	                                const std::string& _object_path,
-	                                const std::string& _source_resource,
-	                                std::string* _document_type)
-	{
-		std::list<boost::any> args;
-		args.push_back(boost::any(_object_path));
-		args.push_back(boost::any(_source_resource));
-		args.push_back(boost::any(_document_type));
-		std::string policy_name =
-			irods::indexing::policy::compose_policy_name(irods::indexing::policy::prefix, "document_type_elastic");
-		irods::indexing::invoke_policy(_rei, policy_name, args);
-	} // apply_document_type_policy
-
 	std::string generate_id()
 	{
 		using namespace boost::archive::iterators;
@@ -302,9 +288,6 @@ namespace
 				// TODO Do we protect against this?
 			}
 
-			std::string doc_type{"text"}; // TODO What is this for?
-			apply_document_type_policy(_rei, _object_path, _source_resource, &doc_type);
-
 			const std::string object_id = get_object_index_id(_rei, _object_path);
 			std::vector<char> buffer(config->read_size_);
 			irods::experimental::io::server::basic_transport<char> xport(*_rei->rsComm);
@@ -400,16 +383,12 @@ namespace
 	                                  const std::string& _index_name)
 	{
 		try {
-			std::string doc_type{"text"}; // TODO What is this for?
-			apply_document_type_policy(_rei, _object_path, _source_resource, &doc_type);
-
 			const std::string object_id{get_object_index_id(_rei, _object_path)};
 			int chunk_counter{0};
 			bool done{false};
 
 			while (!done) {
 				//elasticlient::Client client{config->hosts_};
-				// TODO doc_type appeared to be used in place of _doc. But why?
 				const auto response =
 					send_http_request(config->hosts_[0],
 				                      http::verb::delete_,
