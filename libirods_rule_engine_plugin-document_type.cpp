@@ -91,9 +91,9 @@ namespace
 	}
 
 	irods::error exec_rule(irods::default_re_ctx&,
-						   const std::string& _rn,
-						   std::list<boost::any>& _args,
-						   irods::callback _eff_hdlr)
+	                       const std::string& _rn,
+	                       std::list<boost::any>& _args,
+	                       irods::callback _eff_hdlr)
 	{
 		ruleExecInfo_t* rei{};
 		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
@@ -131,10 +131,10 @@ namespace
 	} // exec_rule
 
 	irods::error exec_rule_text(irods::default_re_ctx&,
-								const std::string&,
-								msParamArray_t*,
-								const std::string&,
-								irods::callback)
+	                            const std::string&,
+	                            msParamArray_t*,
+	                            const std::string&,
+	                            irods::callback)
 	{
 		return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_text is not supported");
 	} // exec_rule_text

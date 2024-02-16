@@ -779,9 +779,9 @@ namespace
 	} // list_rules
 
 	irods::error exec_rule(irods::default_re_ctx&,
-						   const std::string& _rn,
-						   std::list<boost::any>& _args,
-						   irods::callback _eff_hdlr)
+	                       const std::string& _rn,
+	                       std::list<boost::any>& _args,
+	                       irods::callback _eff_hdlr)
 	{
 		ruleExecInfo_t* rei{};
 		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
@@ -809,10 +809,10 @@ namespace
 	} // exec_rule
 
 	irods::error exec_rule_text(irods::default_re_ctx&,
-								const std::string& _rule_text,
-								msParamArray_t* _ms_params,
-								const std::string& _out_desc,
-								irods::callback _eff_hdlr)
+	                            const std::string& _rule_text,
+	                            msParamArray_t* _ms_params,
+	                            const std::string& _out_desc,
+	                            irods::callback _eff_hdlr)
 	{
 		using json = nlohmann::json;
 
@@ -872,9 +872,9 @@ namespace
 	} // exec_rule_text
 
 	irods::error exec_rule_expression(irods::default_re_ctx&,
-									  const std::string& _rule_text,
-									  msParamArray_t* _ms_params,
-									  irods::callback _eff_hdlr)
+	                                  const std::string& _rule_text,
+	                                  msParamArray_t* _ms_params,
+	                                  irods::callback _eff_hdlr)
 	{
 		using json = nlohmann::json;
 		ruleExecInfo_t* rei{};
@@ -895,12 +895,12 @@ namespace
 					// -     as a delayed task.
 					// -
 					apply_object_policy(rei,
-										irods::indexing::policy::object::index,
-										rule_obj["object-path"],
-										rule_obj["source-resource"],
-										rule_obj["indexer"],
-										rule_obj["index-name"],
-										rule_obj["index-type"]);
+					                    irods::indexing::policy::object::index,
+					                    rule_obj["object-path"],
+					                    rule_obj["source-resource"],
+					                    rule_obj["indexer"],
+					                    rule_obj["index-name"],
+					                    rule_obj["index-type"]);
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
@@ -917,12 +917,12 @@ namespace
 					// -    as a delayed task.
 					// -
 					apply_object_policy(rei,
-										irods::indexing::policy::object::purge,
-										rule_obj["object-path"],
-										rule_obj["source-resource"],
-										rule_obj["indexer"],
-										rule_obj["index-name"],
-										rule_obj["index-type"]);
+					                    irods::indexing::policy::object::purge,
+					                    rule_obj["object-path"],
+					                    rule_obj["source-resource"],
+					                    rule_obj["indexer"],
+					                    rule_obj["index-name"],
+					                    rule_obj["index-type"]);
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
@@ -935,11 +935,11 @@ namespace
 				// -
 				irods::indexing::indexer idx{rei, config->instance_name};
 				idx.schedule_policy_events_for_collection(irods::indexing::operation_type::index,
-														  rule_obj["collection-name"],
-														  rule_obj["user-name"],
-														  rule_obj["indexer"],
-														  rule_obj["index-name"],
-														  rule_obj["index-type"]);
+				                                          rule_obj["collection-name"],
+				                                          rule_obj["user-name"],
+				                                          rule_obj["indexer"],
+				                                          rule_obj["index-name"],
+				                                          rule_obj["index-type"]);
 			}
 			else if (irods::indexing::policy::collection::purge == rule_obj["rule-engine-operation"]) {
 				// - launch delayed task to handle indexing events under a collection
@@ -947,11 +947,11 @@ namespace
 				// -
 				irods::indexing::indexer idx{rei, config->instance_name};
 				idx.schedule_policy_events_for_collection(irods::indexing::operation_type::purge,
-														  rule_obj["collection-name"],
-														  rule_obj["user-name"],
-														  rule_obj["indexer"],
-														  rule_obj["index-name"],
-														  rule_obj["index-type"]);
+				                                          rule_obj["collection-name"],
+				                                          rule_obj["user-name"],
+				                                          rule_obj["indexer"],
+				                                          rule_obj["index-name"],
+				                                          rule_obj["index-type"]);
 			}
 			else if (irods::indexing::policy::metadata::index == rule_obj["rule-engine-operation"]) {
 				try {
@@ -960,13 +960,13 @@ namespace
 					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 					apply_metadata_policy(rei,
-										  irods::indexing::policy::metadata::index,
-										  rule_obj["object-path"],
-										  rule_obj["indexer"],
-										  rule_obj["index-name"],
-										  rule_obj["attribute"],
-										  rule_obj["value"],
-										  rule_obj["units"]);
+					                      irods::indexing::policy::metadata::index,
+					                      rule_obj["object-path"],
+					                      rule_obj["indexer"],
+					                      rule_obj["index-name"],
+					                      rule_obj["attribute"],
+					                      rule_obj["value"],
+					                      rule_obj["units"]);
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
@@ -980,13 +980,13 @@ namespace
 					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 					apply_metadata_policy(rei,
-										  irods::indexing::policy::metadata::purge,
-										  rule_obj["object-path"],
-										  rule_obj["indexer"],
-										  rule_obj["index-name"],
-										  rule_obj["attribute"],
-										  rule_obj["value"],
-										  rule_obj["units"]);
+					                      irods::indexing::policy::metadata::purge,
+					                      rule_obj["object-path"],
+					                      rule_obj["indexer"],
+					                      rule_obj["index-name"],
+					                      rule_obj["attribute"],
+					                      rule_obj["value"],
+					                      rule_obj["units"]);
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
@@ -998,12 +998,12 @@ namespace
 				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 				apply_specific_policy(rei,
-									  "irods_policy_recursive_rm_object_by_path",
-									  rule_obj["object-path"],
-									  rule_obj["source-resource"],
-									  rule_obj["indexer"],
-									  rule_obj["index-name"],
-									  rule_obj["index-type"]);
+				                      "irods_policy_recursive_rm_object_by_path",
+				                      rule_obj["object-path"],
+				                      rule_obj["source-resource"],
+				                      rule_obj["indexer"],
+				                      rule_obj["index-name"],
+				                      rule_obj["index-type"]);
 			}
 			else {
 				printErrorStack(&rei->rsComm->rError);
@@ -1012,11 +1012,11 @@ namespace
 		}
 		catch (const json::parse_error& _e) {
 			rodsLog(LOG_ERROR,
-					"Exception (%s). Could not parse JSON rule text @ FILE %s LINE %d FUNCTION %s ",
-					_e.what(),
-					__FILE__,
-					__LINE__,
-					__FUNCTION__);
+			        "Exception (%s). Could not parse JSON rule text @ FILE %s LINE %d FUNCTION %s ",
+			        _e.what(),
+			        __FILE__,
+			        __LINE__,
+			        __FUNCTION__);
 			return CODE(RULE_ENGINE_CONTINUE);
 		}
 		catch (const std::invalid_argument& _e) {
