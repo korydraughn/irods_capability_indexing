@@ -238,11 +238,6 @@ namespace irods::indexing
 		int job_limit{};
 		std::string delay_parameters{"<EF>60s DOUBLE UNTIL SUCCESS OR 5 TIMES</EF>"};
 
-		// Clients should aim not to use this index-embedded URL. It is no
-		// longer used by MetaLnx as of version 2.5.0, nor by the search plugin
-		// extension. Thus, it is a possible target for deprecation.
-		std::string url_template{"http:/{}"};
-
 		int log_level{LOG_DEBUG};
 		std::string collection_test_flag;
 

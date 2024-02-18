@@ -31,7 +31,6 @@ namespace irods::indexing
 			// string parameters
 
 			capture_parameter("index", index);
-			capture_parameter("url_template", url_template);
 			capture_parameter("delay_parameters", delay_parameters);
 			capture_parameter("collection_test_flag", collection_test_flag);
 		}

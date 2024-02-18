@@ -703,7 +703,6 @@ namespace
 			}
 		}
 		auto fileName = obj["fileName"] = irods_path.object_name();
-		obj["url"] = fmt::format(fmt::runtime(config->url_template), _obj_path);
 		obj["mimeType"] = (is_collection ? "" : get_default_mime_type(fileName));
 		return obj;
 	} // get_system_metadata
