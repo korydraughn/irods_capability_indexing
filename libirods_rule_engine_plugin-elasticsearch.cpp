@@ -60,7 +60,7 @@ namespace
 		std::vector<std::string> hosts;
 		int bulk_count{10};
 		int read_size{4194304};
-		std::string es_version{"7."};
+		std::string es_version{"7."}; // TODO Not used.
 
 		configuration(const std::string& _instance_name)
 			: irods::indexing::configuration(_instance_name)
@@ -73,6 +73,9 @@ namespace
 						hosts.push_back(i.get<std::string>());
 					}
 				}
+				else {
+					THROW(USER_INPUT_OPTION_ERR, fmt::format("{}: elasticsearch: [hosts] cannot be empty", __func__));
+				}
 
 				if (auto iter = cfg.find("es_version"); iter != cfg.end()) {
 					es_version = iter->get<std::string>();
@@ -80,10 +83,20 @@ namespace
 
 				if (auto iter = cfg.find("bulk_count"); iter != cfg.end()) {
 					bulk_count = iter->get<int>();
+					if (bulk_count <= 0) {
+						THROW(USER_INPUT_OPTION_ERR,
+						      fmt::format(
+								  "{}: elasticsearch: Invalid value [{}] for [bulk_count]", __func__, bulk_count));
+					}
 				}
 
 				if (auto iter = cfg.find("read_size"); iter != cfg.end()) {
-					bulk_count = iter->get<int>();
+					read_size = iter->get<int>();
+					if (read_size <= 0) {
+						THROW(
+							USER_INPUT_OPTION_ERR,
+							fmt::format("{}: elasticsearch: Invalid value [{}] for [read_size]", __func__, read_size));
+					}
 				}
 			}
 			catch (const std::exception& _e) {
@@ -132,25 +145,25 @@ namespace
 
 				http::request<http::string_body> req{_verb, _target, 11};
 				req.set(http::field::host, boost::asio::ip::host_name());
-				req.set(http::field::user_agent, "iRODS Indexing Plugin/4.3.1");
+				req.set(http::field::user_agent, "iRODS Indexing Plugin/" IRODS_PLUGIN_VERSION);
 				req.set(http::field::content_type, "application/json");
 
 				if (!_body.empty()) {
 					req.body() = _body;
-					{
-						std::stringstream ss;
-						ss << req;
-						const auto s = ss.str();
-						if (s.size() > 256) {
-							rodsLog(
-								LOG_DEBUG,
-								fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
-									.c_str());
-						}
-						else {
-							rodsLog(LOG_DEBUG, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
-						}
+
+					std::stringstream ss;
+					ss << req;
+					const auto s = ss.str();
+
+					if (s.size() > 256) {
+						rodsLog(LOG_DEBUG,
+						        fmt::format("{}: sending request = (truncated) [{} ...]", __func__, s.substr(0, 256))
+						            .c_str());
 					}
+					else {
+						rodsLog(LOG_DEBUG, fmt::format("{}: sending request = [{}]", __func__, s).c_str());
+					}
+
 					req.prepare_payload();
 				}
 
@@ -285,10 +298,6 @@ namespace
 	                                     const std::string& _index_name)
 	{
 		try {
-			if (config->bulk_count < 0) {
-				// TODO Do we protect against this?
-			}
-
 			const std::string object_id = get_object_index_id(_rei, _object_path);
 			std::vector<char> buffer(config->read_size);
 			irods::experimental::io::server::basic_transport<char> xport(*_rei->rsComm);
@@ -400,11 +409,11 @@ namespace
 					done = true;
 					if (response->result_int() == 404) { // meaningful for logging
 						rodsLog(LOG_NOTICE,
-						        fmt::format(
-									"elasticlient 404: no index entry for chunk ({}) of object_id [{}] in index [{}]",
-									chunk_counter,
-									object_id,
-									_index_name)
+						        fmt::format("{}: No index entry for chunk ({}) of object_id [{}] in index [{}]",
+						                    __func__,
+						                    chunk_counter,
+						                    object_id,
+						                    _index_name)
 						            .c_str());
 					}
 				}
@@ -527,7 +536,7 @@ namespace
 				send_http_request(http::verb::delete_, fmt::format("{}/_doc/{}", _index_name, object_id));
 
 			if (!response.has_value()) {
-				auto msg = fmt::format("{}: No response from elaticsearch host.", __func__);
+				auto msg = fmt::format("{}: No response from elasticsearch host.", __func__);
 				rodsLog(LOG_ERROR, msg.c_str());
 				THROW(SYS_INTERNAL_ERR, std::move(msg));
 			}
@@ -574,7 +583,14 @@ namespace
 	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
 	{
 		RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
-		config = std::make_unique<configuration>(_instance_name);
+
+		try {
+			config = std::make_unique<configuration>(_instance_name);
+		}
+		catch (const irods::exception& e) {
+			return e;
+		}
+
 		object_index_policy =
 			irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::index, "elasticsearch");
 		object_purge_policy =
@@ -692,17 +708,14 @@ namespace
 				std::string JsubObject;
 
 				try {
-					if (recurse_info["is_collection"].get<bool>()) {
+					if (recurse_info.at("is_collection").get<bool>()) {
 						JsubObject =
 							json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}
 								.dump();
 					}
 				}
-				catch (const std::domain_error& e) {
-					// TODO What is this about? Why std::domain_error?
-					return ERROR(
-						-1,
-						fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}", e.what()));
+				catch (const json::exception& e) {
+					return ERROR(SYS_LIBRARY_ERROR, e.what());
 				}
 
 				try {
@@ -717,7 +730,7 @@ namespace
 
 							if (!response.has_value()) {
 								rodsLog(LOG_ERROR,
-								        fmt::format("{}: No response from elaticsearch host.", __func__).c_str());
+								        fmt::format("{}: No response from elasticsearch host.", __func__).c_str());
 								continue;
 							}
 

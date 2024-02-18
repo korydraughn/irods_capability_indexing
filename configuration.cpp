@@ -45,15 +45,13 @@ namespace irods::indexing
 			                  _instance_name));
 		}
 		catch (const nlohmann::json::exception& _e) {
-			// TODO Why log this and not the others?
-			irods::log(LOG_ERROR,
-			           fmt::format("[{}:{}] in [file={}] - json exception occurred [error={}], [instance_name={}]",
-			                       __func__,
-			                       __LINE__,
-			                       __FILE__,
-			                       _e.what(),
-			                       _instance_name));
-			THROW(SYS_LIBRARY_ERROR, _e.what());
+			THROW(SYS_LIBRARY_ERROR,
+			      fmt::format("[{}:{}] in [file={}] - json exception occurred [error={}], [instance_name={}]",
+			                  __func__,
+			                  __LINE__,
+			                  __FILE__,
+			                  _e.what(),
+			                  _instance_name));
 		}
 		catch (const std::exception& _e) {
 			THROW(SYS_INTERNAL_ERR,

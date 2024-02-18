@@ -30,19 +30,32 @@ namespace
 		{
 			try {
 				auto cfg = irods::indexing::get_plugin_specific_configuration(_instance_name);
-				if (cfg.find("hosts") != cfg.end()) {
-					std::vector<boost::any> host_list = boost::any_cast<std::vector<boost::any>>(cfg.at("hosts"));
-					for (auto& i : host_list) {
-						hosts.push_back(boost::any_cast<std::string>(i));
+
+				if (auto iter = cfg.find("hosts"); iter != cfg.end()) {
+					for (auto& i : *iter) {
+						hosts.push_back(i.get<std::string>());
+					}
+				}
+				else {
+					THROW(USER_INPUT_OPTION_ERR, fmt::format("{}: document_type: [hosts] cannot be empty", __func__));
+				}
+
+				if (auto iter = cfg.find("bulk_count"); iter != cfg.end()) {
+					bulk_count = iter->get<int>();
+					if (bulk_count <= 0) {
+						THROW(USER_INPUT_OPTION_ERR,
+						      fmt::format(
+								  "{}: document_type: Invalid value [{}] for [bulk_count]", __func__, bulk_count));
 					}
 				}
 
-				if (cfg.find("bulk_count") != cfg.end()) {
-					bulk_count = boost::any_cast<int>(cfg.at("bulk_count"));
-				}
-
-				if (cfg.find("read_size") != cfg.end()) {
-					bulk_count = boost::any_cast<int>(cfg.at("read_size"));
+				if (auto iter = cfg.find("read_size"); iter != cfg.end()) {
+					read_size = iter->get<int>();
+					if (read_size <= 0) {
+						THROW(
+							USER_INPUT_OPTION_ERR,
+							fmt::format("{}: document_type: Invalid value [{}] for [read_size]", __func__, read_size));
+					}
 				}
 			}
 			catch (const boost::bad_any_cast& _e) {
@@ -59,17 +72,23 @@ namespace
 	                                         const std::string& _source_resource,
 	                                         std::string* _document_type)
 	{
-		using ids = irods::experimental::io::idstream;
-
 		(*_document_type) = "text";
 	} // invoke_document_type_indexing_event
 
 	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
 	{
 		RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
-		config = std::make_unique<configuration>(_instance_name);
+
+		try {
+			config = std::make_unique<configuration>(_instance_name);
+		}
+		catch (const irods::exception& e) {
+			return e;
+		}
+
 		document_type_index_policy =
 			irods::indexing::policy::compose_policy_name(irods::indexing::policy::prefix, "document_type_elastic");
+
 		return SUCCESS();
 	}
 
