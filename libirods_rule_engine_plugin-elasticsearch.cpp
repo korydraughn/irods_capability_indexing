@@ -228,14 +228,13 @@ namespace
 			if (iscoll) {
 				*iscoll = true;
 			}
-			query_str = boost::str(boost::format("SELECT COLL_ID WHERE COLL_NAME = '%s'") % _object_path);
+			query_str = fmt::format("SELECT COLL_ID WHERE COLL_NAME = '{}'", _object_path);
 		}
 		else {
 			if (iscoll) {
 				*iscoll = false;
 			}
-			query_str = boost::str(boost::format("SELECT DATA_ID WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'") %
-			                       data_name % coll_name);
+			query_str = fmt::format("SELECT DATA_ID WHERE COLL_NAME = '{}' AND DATA_NAME = '{}'", coll_name, data_name);
 		}
 		try {
 			irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
