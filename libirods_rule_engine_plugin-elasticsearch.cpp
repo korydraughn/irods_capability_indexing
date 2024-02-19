@@ -29,7 +29,9 @@
 #include <boost/archive/iterators/transform_width.hpp>
 
 #include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 #include <boost/beast.hpp>
+#include <boost/beast/ssl.hpp>
 #include <boost/url.hpp>
 
 #include <boost/uuid/uuid.hpp>
@@ -131,18 +133,13 @@ namespace
 				continue;
 			}
 
+			const auto use_tls = (result->has_scheme() && result->scheme_id() == urls::scheme::https);
+
 			namespace net = boost::asio;
 			using tcp = net::ip::tcp;
 
-			try {
-				net::io_context ioc;
-
-				tcp::resolver resolver{ioc};
-				beast::tcp_stream stream{ioc};
-
-				const auto results = resolver.resolve(result->host(), result->port());
-				stream.connect(results);
-
+			// This lambda encapsulates the HTTP logic that's independent of the type of stream.
+			const auto construct_and_send_http_request = [_verb, _target, _body](auto& _stream) {
 				http::request<http::string_body> req{_verb, _target, 11};
 				req.set(http::field::host, boost::asio::ip::host_name());
 				req.set(http::field::user_agent, "iRODS Indexing Plugin/" IRODS_PLUGIN_VERSION);
@@ -167,27 +164,73 @@ namespace
 					req.prepare_payload();
 				}
 
-				http::write(stream, req);
+				http::write(_stream, req);
 
 				beast::flat_buffer buffer;
 				http::response<http::string_body> res;
-				http::read(stream, buffer, res);
+				http::read(_stream, buffer, res);
 
-				{
-					std::stringstream ss;
-					ss << res;
-					rodsLog(LOG_DEBUG, fmt::format("{}: elasticsearch response = [{}]", __func__, ss.str()).c_str());
-				}
-
-				beast::error_code ec;
-				stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-
-				// not_connected happens sometimes, so don't bother reporting it.
-				if (ec && ec != beast::errc::not_connected) {
-					throw beast::system_error{ec};
-				}
+				std::stringstream ss;
+				ss << res;
+				rodsLog(LOG_DEBUG, fmt::format("{}: elasticsearch response = [{}]", __func__, ss.str()).c_str());
 
 				return res;
+			};
+
+			try {
+				net::io_context ioc;
+
+				tcp::resolver resolver{ioc};
+				const auto results = resolver.resolve(result->host(), result->port());
+
+				if (use_tls) {
+					net::ssl::context tls_ctx{net::ssl::context::tlsv12_client};
+					tls_ctx.set_default_verify_paths();
+					tls_ctx.set_verify_mode(net::ssl::verify_peer);
+
+					beast::ssl_stream<beast::tcp_stream> stream{ioc, tls_ctx};
+
+					// Set SNI hostname (many hosts need this to handshake successfully).
+					if (!::SSL_set_tlsext_host_name(stream.native_handle(), result->host().c_str())) {
+						beast::error_code ec{static_cast<int>(::ERR_get_error()), net::error::get_ssl_category()};
+						throw beast::system_error{ec};
+					}
+
+					beast::get_lowest_layer(stream).connect(results);
+
+					auto res = construct_and_send_http_request(stream);
+
+					beast::error_code ec;
+					stream.shutdown(ec);
+
+					if (net::error::eof == ec) {
+						// Rationale:
+						// http://stackoverflow.com/questions/25587403/boost-asio-ssl-async-shutdown-always-finishes-with-an-error
+						ec = {};
+					}
+
+					if (ec) {
+						throw beast::system_error{ec};
+					}
+
+					return res;
+				}
+				else {
+					beast::tcp_stream stream{ioc};
+					stream.connect(results);
+
+					auto res = construct_and_send_http_request(stream);
+
+					beast::error_code ec;
+					stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+
+					// not_connected happens sometimes, so don't bother reporting it.
+					if (ec && ec != beast::errc::not_connected) {
+						throw beast::system_error{ec};
+					}
+
+					return res;
+				}
 			}
 			catch (const std::exception& e) {
 				rodsLog(LOG_ERROR, fmt::format("{}: {}", __func__, e.what()).c_str());
