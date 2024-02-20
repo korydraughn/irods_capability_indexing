@@ -435,29 +435,35 @@ namespace
 		try {
 			const std::string object_id{get_object_index_id(_rei, _object_path)};
 			int chunk_counter{0};
-			bool done{false};
 
-			while (!done) {
-				const auto response = send_http_request(
-					http::verb::delete_, fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter));
-				++chunk_counter;
+			while (true) {
+				const auto index_entry = fmt::format("{}/_doc/{}_{}", _index_name, object_id, chunk_counter++);
+				const auto response = send_http_request(http::verb::delete_, index_entry);
 
 				if (!response.has_value()) {
-					rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
-					continue;
+					rodsLog(LOG_ERROR,
+					        "%s: No response from elasticsearch host. Index entry [%s] may not have been purged",
+					        __func__,
+					        index_entry.c_str());
+					break;
 				}
 
+				// Some objects will be split into multiple chunks. Because we don't track them,
+				// the only way to know when all chunks have been processed is to send requests until
+				// we receive a HTTP status code of 404. Here, we expand the status code range to
+				// anything other than 200.
 				if (response->result_int() != 200) {
-					done = true;
 					if (response->result_int() == 404) { // meaningful for logging
 						rodsLog(LOG_NOTICE,
-						        fmt::format("{}: No index entry for chunk ({}) of object_id [{}] in index [{}]",
+						        fmt::format("{}: No index entry for chunk [{}] of object_id [{}] in index [{}]",
 						                    __func__,
 						                    chunk_counter,
 						                    object_id,
 						                    _index_name)
 						            .c_str());
 					}
+
+					break;
 				}
 			}
 		}
@@ -761,14 +767,16 @@ namespace
 				}
 
 				try {
-					for (const std::string& index_name : recurse_info["indices"]) {
-						for (const std::string& json_out : {JtopLevel, JsubObject}) {
-							if (json_out.empty()) {
+					for (const auto& e : recurse_info.at("indices")) {
+						const auto& index_name = e.get_ref<const std::string&>();
+
+						for (const std::string& query_input : {JtopLevel, JsubObject}) {
+							if (query_input.empty()) {
 								continue;
 							}
 
 							const auto response = send_http_request(
-								http::verb::post, fmt::format("{}/_delete_by_query", index_name), json_out);
+								http::verb::post, fmt::format("{}/_delete_by_query", index_name), query_input);
 
 							if (!response.has_value()) {
 								rodsLog(LOG_ERROR,
@@ -777,15 +785,11 @@ namespace
 							}
 
 							if (response->result_int() != 200) {
-								rodsLog(LOG_WARNING,
-								        fmt::format("_delete_by_query - response code not 200"
-								                    "\n\t- for path [{}]"
-								                    "\n\t- escaped as [{}]"
-								                    "\n\t- json request body is [{}]",
-								                    the_path,
-								                    escaped_path,
-								                    json_out)
-								            .c_str());
+								rodsLog(
+									LOG_WARNING,
+									fmt::format(
+										"{}: _delete_by_query failed [rule=[{}], path=[{}]", __func__, _rn, the_path)
+										.c_str());
 							}
 						}
 					}
